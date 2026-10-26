@@ -11,6 +11,7 @@
 #cadangan summary{cursor:pointer;font-weight:600;min-height:32px}
 #cadangan .cd-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 #cadangan textarea{width:100%;min-height:110px;margin-top:12px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:12px/1.4 var(--f-mono)}
+.g1{display:grid;grid-template-columns:1fr;gap:10px}
 </style>
 </head><body>
 <title>Buku Kirim</title>
@@ -218,11 +219,13 @@ function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 
 /* ---------- hitungan ---------- */
 function calcEntry(e){
-  const p=num(e.p),l=num(e.l),t=num(e.t),isi=num(e.isi),qty=num(e.qty);
-  const balls=(isi>0&&qty>0)?Math.ceil(qty/isi-1e-9):0;
+  const p=num(e.p),l=num(e.l),t=num(e.t),isi=num(e.isi),jb=num(e.jb);
+  let qty=num(e.qty),balls;
+  if(jb>0){balls=Math.ceil(jb-1e-9);if(!qty&&isi>0)qty=balls*isi;}
+  else balls=(isi>0&&qty>0)?Math.ceil(qty/isi-1e-9):0;
   const vb=p*l*t/1e6;
-  const rem=balls?qty-(balls-1)*isi:0;
-  return {p,l,t,isi,qty,balls,vb,vol:balls*vb,rem,partial:balls>0&&rem<isi-1e-9};
+  const rem=(balls&&isi>0&&qty>0)?qty-(balls-1)*isi:0;
+  return {p,l,t,isi,qty,jb,balls,vb,vol:balls*vb,rem,partial:balls>0&&isi>0&&rem>0&&rem<isi-1e-9};
 }
 function bestFit(cap,item,rot){
   const [p,l,t]=item;
@@ -309,6 +312,7 @@ function entryHtml(e,j,n){
   return '<div class="entry" data-j="'+j+'">'+
     '<div class="entry-head"><span class="sub">Isian '+(j+1)+'</span>'+(n>1?'<button type="button" class="lnk bad" data-act="del-entry" data-j="'+j+'">Hapus isian</button>':'')+'</div>'+
     '<div class="grid g3">'+f('Panjang ball cm','p')+f('Lebar ball cm','l')+f('Tinggi ball cm','t')+'</div>'+
+    '<div class="grid g1">'+f('Jumlah ball (isi kalau sudah tahu)','jb')+'</div>'+
     '<div class="grid g2">'+f('Isi per ball (pcs)','isi')+f('Qty dikirim (pcs)','qty')+'</div>'+
     '<div class="rowout"></div></div>';
 }
@@ -333,8 +337,7 @@ function updateOuts(){
     if(el){
       let t;
       if(!(c.p&&c.l&&c.t))t='Isi ukuran ball.';
-      else if(!c.isi)t='Isi jumlah pcs per ball.';
-      else if(!c.qty)t='Isi qty yang dikirim.';
+      else if(!c.balls)t=c.isi?'Isi qty yang dikirim, atau isi jumlah ball langsung.':'Isi jumlah ball, atau isi pcs per ball dan qty.';
       else{
         t='= '+nf0.format(c.balls)+' ball · '+nf.format(c.vol)+' m³';
         if(c.partial)t+=' · ball terakhir berisi '+nf.format(c.rem)+' pcs';
@@ -356,12 +359,12 @@ function renderOut(){
   const {rows,tot}=computeAll();
   const out=$('#out');
   const used=rows.filter(r=>r.balls>0&&r.vb>0);
-  if(!used.length){out.innerHTML='<p class="hint">Isi ukuran ball, isi per ball, dan qty untuk melihat hasil.</p>';return;}
+  if(!used.length){out.innerHTML='<p class="hint">Isi ukuran ball, lalu jumlah ball atau isi per ball dan qty untuk melihat hasil.</p>';return;}
   const kvTotals=
     '<div class="kv"><span class="k">Total ball</span><span class="v">'+nf0.format(tot.balls)+'</span></div>'+
     '<div class="kv"><span class="k">Total qty</span><span class="v">'+nf0.format(tot.pcs)+' pcs</span></div>';
   if(S.mode==='lcl'){
-    const lines=used.map(r=>'<li><span>'+esc(r.label)+'</span><span class="m">'+nf.format(r.p)+'×'+nf.format(r.l)+'×'+nf.format(r.t)+' cm · '+nf0.format(r.balls)+' ball · isi '+nf0.format(r.isi)+' pcs · '+nf.format(r.vol)+' m³</span></li>').join('');
+    const lines=used.map(r=>'<li><span>'+esc(r.label)+'</span><span class="m">'+nf.format(r.p)+'×'+nf.format(r.l)+'×'+nf.format(r.t)+' cm · '+nf0.format(r.balls)+' ball'+(r.isi?' · isi '+nf0.format(r.isi)+' pcs':'')+' · '+nf.format(r.vol)+' m³</span></li>').join('');
     out.innerHTML=
       '<div class="big">'+nf.format(tot.vol)+'<small>m³ total</small></div>'+
       '<div>'+kvTotals+'<div class="kv total"><span class="k">Kubikasi total</span><span class="v">'+nf.format(tot.vol)+' m³</span></div></div>'+
@@ -388,7 +391,8 @@ function renderOut(){
       (fit.n<1?'<span class="m err">Ukuran ball ini tidak muat di dalam kontainer.</span>':
       '<span class="m">Maksimal muat jika hanya ukuran ini: '+nf0.format(fit.n)+' ball ('+(fit.mix?'susunan campuran':fit.grid)+') · memakai ±'+nf1.format(mine)+'% ruang · sisa ruang setara ±'+nf0.format(extra)+' ball lagi</span>')+'</li>';
   }).join('');
-  const cal=calibrate({P,L,T});
+  const sig=loadSig(S.items);
+  const cal=calibrate({P,L,T},sig);
   const st=noFit?'tidak':statusFor(share,cal);
   const stLabel={muat:'MUAT',mungkin:'MUNGKIN MUAT',tidak:'TIDAK MUAT'}[st];
   const stCls={muat:'good',mungkin:'warn',tidak:'bad'}[st];
@@ -396,10 +400,10 @@ function renderOut(){
     (cal.okMax!=null&&share<=cal.okMax+1e-9?'teruji riwayat':
     (cal.failMin!=null&&share>=cal.failMin-1e-9&&share>(cal.okMax==null?-1:cal.okMax)?'melewati batas gagal riwayat':'hitungan teori'));
   const calLines=
-    (cal.n?'<p class="hint">Dari '+cal.n+' kiriman tersimpan di kontainer ini: '+
+    (cal.n?'<p class="hint">Dari '+cal.n+' kiriman tersimpan dengan barang yang sama di kontainer ini: '+
       (cal.okMax!=null?'tercapai sampai <b>'+nf1.format(cal.okMax*100)+'%</b> susunan':'belum ada data muat')+
       (cal.failMin!=null?', gagal mulai <b>'+nf1.format(cal.failMin*100)+'%</b>.':'.')+'</p>':
-      '<p class="hint">Belum ada riwayat untuk kontainer ini, jadi status memakai hitungan teori saja.</p>');
+      '<p class="hint">Belum ada riwayat dengan barang yang sama di kontainer ini, jadi status memakai hitungan teori saja.</p>');
   let tip='';
   if(noFit)tip='<p class="over-note">Ada ukuran ball yang lebih besar dari ruang dalam kontainer.</p>';
   else if(st==='muat')tip='<p class="hint">'+(basis==='teruji riwayat'?'Susunan ini tidak melebihi yang pernah berhasil Anda muat.':'Berdasarkan hitungan teori, muatan masuk dengan susunan rapi.')+' Perkiraan sisa ruang ±'+nf1.format(sisaShare*100)+'%.</p>';
@@ -420,12 +424,12 @@ function renderOut(){
     '<div class="bars">'+bar('Volume',pct)+'</div>'+
     (pct>100?'<p class="over-note">Muatan melebihi kontainer sebesar '+nf.format(-sisa)+' m³.</p>':'')+
     est+
-    histBlock({P,L,T},pct,S.items.map(it=>String(it.nama||'').trim().toLowerCase()).filter(Boolean))+
+    histBlock({P,L,T},pct,sig)+
     '<div>'+kvTotals+
       '<div class="kv"><span class="k">Kapasitas kontainer</span><span class="v">'+nf.format(cv)+' m³</span></div>'+
       '<div class="kv total"><span class="k">'+(sisa>=0?'Sisa ruang':'Kelebihan muatan')+'</span><span class="v">'+nf.format(Math.abs(sisa))+' m³</span></div></div>'+
     '<p class="sub">Per isian</p><ul class="lines">'+lines+'</ul>'+
-    '<p class="hint">Persen volume dihitung dari volume ball, tanpa celah susunan. Status estimasi masuk memakai hitungan teori yang dikoreksi riwayat kiriman di kontainer yang sama (susunan 100% = batas teori). Hitungan teori mencari susunan terbaik per ukuran ball, termasuk susunan campuran orientasi (ball ditidurkan atau dibalik di blok yang berbeda). Kalau ada beberapa ukuran ball berbeda, tiap ukuran dihitung terpisah lalu porsinya dijumlahkan, jadi hasilnya perkiraan yang cenderung hati-hati. Susunan ini butuh penataan rapi di lapangan.</p>';
+    '<p class="hint">Persen volume dihitung dari volume ball, tanpa celah susunan. Status estimasi masuk memakai hitungan teori yang dikoreksi riwayat kiriman di kontainer yang sama dan dengan barang yang sama (susunan 100% = batas teori). Hitungan teori mencari susunan terbaik per ukuran ball, termasuk susunan campuran orientasi (ball ditidurkan atau dibalik di blok yang berbeda). Kalau ada beberapa ukuran ball berbeda, tiap ukuran dihitung terpisah lalu porsinya dijumlahkan, jadi hasilnya perkiraan yang cenderung hati-hati. Susunan ini butuh penataan rapi di lapangan.</p>';
 }
 
 /* ---------- riwayat: pembanding di hasil FCL ---------- */
@@ -433,6 +437,18 @@ const H={q:'',saveOpen:false,draft:null,confirmId:null,err:''};
 const today=()=>{const d=new Date();const z=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());};
 const histCap=h=>({P:num(h.P),L:num(h.L),T:num(h.T)});
 const histNames=h=>(h.items||[]).map(it=>String(it.nama||'').trim().toLowerCase()).filter(Boolean);
+const normNama=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
+const dimSig=e=>[num(e.p),num(e.l),num(e.t)].sort((a,b)=>a-b).join('x');
+/* Tanda pengenal satu barang = nama + ukuran ball tiap isian (jumlah ball tidak ikut). Dua kiriman dianggap berisi barang yang sama kalau himpunan tandanya persis sama. */
+function loadSig(items){
+  const keys=[];
+  (items||[]).forEach(it=>{
+    const ds=(it.entries||[]).filter(e=>{const c=calcEntry(e);return c.balls>0&&c.vb>0;}).map(dimSig).sort().join('+');
+    if(ds)keys.push(normNama(it.nama)+'|'+ds);
+  });
+  return keys.filter((k,i)=>keys.indexOf(k)===i).sort().join('||');
+}
+const sameLoad=(h,sig)=>!!sig&&loadSig(h.items)===sig;
 function histSummary(h){
   const ns=(h.items||[]).map(it=>(it.nama||'Tanpa nama')+(catName(it.kat)?' ('+catName(it.kat)+')':''));
   return ns.length>3?ns.slice(0,3).join(', ')+' +'+(ns.length-3)+' lagi':ns.join(', ');
@@ -445,8 +461,8 @@ function loadedShare(h,ev){
   const m=num(h.masuk);
   return m>0&&ev.balls>0?ev.share*Math.min(m,ev.balls)/ev.balls:null;
 }
-function calibrate(cap){
-  const hs=(B.hist||[]).filter(h=>{const c=histCap(h);return c.P===cap.P&&c.L===cap.L&&c.T===cap.T;});
+function calibrate(cap,sig){
+  const hs=(B.hist||[]).filter(h=>{const c=histCap(h);return c.P===cap.P&&c.L===cap.L&&c.T===cap.T&&sameLoad(h,sig);});
   let okMax=null,failMin=null,n=0;
   hs.forEach(h=>{
     const ev=evalLoad(h.items,histCap(h),h.rot);
@@ -464,13 +480,16 @@ function statusFor(s,cal){
   if(s<=1+1e-9)return cal.okMax!=null?'mungkin':'muat';
   return 'tidak';
 }
-function histBlock(cap,pct,names){
-  const hist=(B.hist||[]).filter(h=>{const c=histCap(h);return c.P===cap.P&&c.L===cap.L&&c.T===cap.T;});
-  if(!hist.length)return '<div><p class="sub">Pembanding historis</p><p class="hint" style="margin-top:6px">Belum ada riwayat untuk ukuran kontainer ini. Simpan hasil kiriman Anda di bawah supaya jadi pembanding.</p></div>';
+function histBlock(cap,pct,sig){
+  const inBox=(B.hist||[]).filter(h=>{const c=histCap(h);return c.P===cap.P&&c.L===cap.L&&c.T===cap.T;});
+  const hist=inBox.filter(h=>sameLoad(h,sig));
+  if(!hist.length){
+    const other=inBox.length;
+    return '<div><p class="sub">Pembanding historis</p><p class="hint" style="margin-top:6px">'+(other?'Belum ada riwayat dengan barang yang sama di kontainer ini. '+other+' riwayat lain memakai barang berbeda, jadi tidak dipakai sebagai pembanding.':'Belum ada riwayat untuk ukuran kontainer ini.')+' Simpan hasil kiriman Anda di bawah supaya jadi pembanding.</p></div>';
+  }
   const info=hist.map(h=>{
     const ev=evalLoad(h.items,histCap(h),h.rot);
-    const shared=histNames(h).filter(n=>names.indexOf(n)>=0).length;
-    return {h:h,ev:ev,shared:shared,d:Math.abs(ev.pct-pct)};
+    return {h:h,ev:ev,d:Math.abs(ev.pct-pct)};
   });
   const okp=info.filter(x=>x.h.hasil==='muat').map(x=>x.ev.pct);
   const nop=info.filter(x=>x.h.hasil==='tidak').map(x=>x.ev.pct);
@@ -478,12 +497,12 @@ function histBlock(cap,pct,names){
   if(okp.length)ref+='Pernah muat sampai '+nf1.format(Math.max.apply(null,okp))+'% volume ('+okp.length+' kiriman). ';
   if(nop.length)ref+='Pernah tidak muat mulai '+nf1.format(Math.min.apply(null,nop))+'% volume ('+nop.length+' kiriman). ';
   const verdict='';
-  info.sort((a,b)=>b.shared-a.shared||a.d-b.d);
+  info.sort((a,b)=>a.d-b.d);
   const rowsH=info.slice(0,3).map(x=>{
     const h=x.h;
     return '<li><span>'+fmtTgl(h.tgl)+' · '+esc(histSummary(h))+'</span>'+
       '<span class="m">'+nf0.format(x.ev.balls)+' ball · '+nf1.format(x.ev.pct)+'% volume · '+(h.hasil==='muat'?'<span class="t-good">muat</span>':'<span class="t-bad">tidak muat</span>')+
-      (x.shared?' · '+x.shared+' barang sama':'')+(h.catatan?' · '+esc(h.catatan):'')+'</span></li>';
+      (h.catatan?' · '+esc(h.catatan):'')+'</span></li>';
   }).join('');
   return '<div><p class="sub">Pembanding historis</p>'+(ref?'<p class="hint" style="margin-top:6px">'+ref+'</p>':'')+verdict+'<ul class="lines">'+rowsH+'</ul></div>';
 }
@@ -521,7 +540,7 @@ function saveHistory(){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(d.tgl)){H.err='Isi tanggal kirim.';paintHsave();return;}
   const items=[];
   S.items.forEach(it=>{
-    const ents=it.entries.map(e=>({p:num(e.p),l:num(e.l),t:num(e.t),isi:num(e.isi),qty:num(e.qty)})).filter(e=>e.p&&e.l&&e.t&&e.isi&&e.qty);
+    const ents=it.entries.map(e=>({p:num(e.p),l:num(e.l),t:num(e.t),isi:num(e.isi),qty:num(e.qty),jb:num(e.jb)})).filter(e=>e.p&&e.l&&e.t&&(e.jb||(e.isi&&e.qty)));
     if(ents.length)items.push({nama:String(it.nama||'').trim(),kat:catName(it.kat)?it.kat:'',entries:ents});
   });
   if(!items.length){H.err='Belum ada isian lengkap untuk disimpan.';paintHsave();return;}
@@ -545,8 +564,8 @@ $('#hsave').addEventListener('input',e=>{
 
 /* ---------- mode dan kontainer ---------- */
 const LEAD={
-  fcl:'Satu kontainer penuh. Lihat berapa persen terisi, sisa ruang, dan berapa ball yang muat. Satu barang bisa punya 2 isian dengan ukuran ball berbeda. Tiap isian berisi ukuran ball, isi pcs per ball, dan qty yang dikirim.',
-  lcl:'Barang gabungan. Hasilnya total kubikasi dalam m³ sebagai dasar hitungan. Satu barang bisa punya 2 isian dengan ukuran ball berbeda. Tiap isian berisi ukuran ball, isi pcs per ball, dan qty yang dikirim.'
+  fcl:'Satu kontainer penuh. Lihat berapa persen terisi, sisa ruang, dan berapa ball yang muat. Satu barang bisa punya 2 isian dengan ukuran ball berbeda. Tiap isian berisi ukuran ball, isi pcs per ball, dan qty yang dikirim. Kalau jumlah ball sudah diketahui, isi langsung di kolom jumlah ball dan isi per ball serta qty boleh dikosongkan.',
+  lcl:'Barang gabungan. Hasilnya total kubikasi dalam m³ sebagai dasar hitungan. Satu barang bisa punya 2 isian dengan ukuran ball berbeda. Tiap isian berisi ukuran ball, isi pcs per ball, dan qty yang dikirim. Kalau jumlah ball sudah diketahui, isi langsung di kolom jumlah ball dan isi per ball serta qty boleh dikosongkan.'
 };
 LEAD.barang='Simpan ukuran ball dan isi per ball sekali saja. Saat menghitung di tab FCL atau LCL, barangnya tinggal dipilih dan ukurannya terisi otomatis.';
 LEAD.riwayat='Catatan kiriman FCL yang sudah terjadi, lengkap dengan hasil di lapangan. Dipakai sebagai pembanding hitungan dan referensi untuk kiriman gabungan beberapa barang. Simpan dari tab FCL lewat tombol Simpan ke riwayat.';
@@ -702,7 +721,7 @@ function paintRiwayat(){
     const cap=histCap(h),ev=evalLoad(h.items,cap,h.rot);
     const mix=(h.items||[]).length>1||(h.items||[]).some(it=>(it.entries||[]).length>1);
     const match=ev.used.length&&(ev.muat===(h.hasil==='muat'));
-    const lines=(h.items||[]).map(it=>(it.entries||[]).map((e,j)=>'<p class="rowout">'+esc(it.nama||'Tanpa nama')+(catName(it.kat)?' ('+esc(catName(it.kat))+')':'')+(it.entries.length>1?' · isian '+(j+1):'')+': '+nf.format(e.p)+'×'+nf.format(e.l)+'×'+nf.format(e.t)+' cm · isi '+nf0.format(e.isi)+' · qty '+nf0.format(e.qty)+' pcs</p>').join('')).join('');
+    const lines=(h.items||[]).map(it=>(it.entries||[]).map((e,j)=>'<p class="rowout">'+esc(it.nama||'Tanpa nama')+(catName(it.kat)?' ('+esc(catName(it.kat))+')':'')+(it.entries.length>1?' · isian '+(j+1):'')+': '+nf.format(e.p)+'×'+nf.format(e.l)+'×'+nf.format(e.t)+' cm'+(e.jb?' · '+nf0.format(e.jb)+' ball':'')+(e.isi?' · isi '+nf0.format(e.isi):'')+(e.qty?' · qty '+nf0.format(e.qty)+' pcs':'')+'</p>').join('')).join('');
     return '<article class="card">'+
       '<div style="display:flex;gap:6px;flex-wrap:wrap"><span class="badge">'+esc(String(h.kontainer||'Kustom').toUpperCase())+'</span>'+(mix?'<span class="badge">GABUNGAN</span>':'')+
         '<span class="badge '+(h.hasil==='muat'?'t-good':'t-bad')+'">'+(h.hasil==='muat'?'MUAT':'TIDAK MUAT')+'</span></div>'+
@@ -718,7 +737,7 @@ function paintRiwayat(){
 }
 function useHistory(id){
   const h=B.hist.find(x=>x.id===id);if(!h)return;
-  S.items=h.items.map(it=>({nama:it.nama||'',kat:it.kat||'',entries:it.entries.map(e=>({p:String(e.p),l:String(e.l),t:String(e.t),isi:String(e.isi),qty:String(e.qty)}))}));
+  S.items=h.items.map(it=>({nama:it.nama||'',kat:it.kat||'',entries:it.entries.map(e=>({p:String(e.p),l:String(e.l),t:String(e.t),isi:e.isi?String(e.isi):'',qty:e.qty?String(e.qty):'',jb:e.jb?String(e.jb):''}))}));
   S.P=String(h.P);S.L=String(h.L);S.T=String(h.T);
   S.box=Object.keys(BOX).find(k=>BOX[k].P===h.P&&BOX[k].L===h.L&&BOX[k].T===h.T)||'kustom';
   S.rot=!!h.rot;S.contoh=false;
@@ -910,7 +929,7 @@ $('#items').addEventListener('change',e=>{
   const i=+t.dataset.pick,b=B.rows.find(x=>x.id===t.value);
   if(!b)return;
   const old=S.items[i];
-  S.items[i]={nama:b.nama,kat:catName(b.kat)?b.kat:'',entries:b.entries.map((x,j)=>({p:String(x.p),l:String(x.l),t:String(x.t),isi:String(x.isi),qty:old.entries[j]?old.entries[j].qty:''}))};
+  S.items[i]={nama:b.nama,kat:catName(b.kat)?b.kat:'',entries:b.entries.map((x,j)=>({p:String(x.p),l:String(x.l),t:String(x.t),isi:String(x.isi),qty:old.entries[j]?old.entries[j].qty:'',jb:old.entries[j]?(old.entries[j].jb||''):''}))};
   S.contoh=false;renderItems();
 });
 
