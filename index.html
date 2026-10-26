@@ -1,0 +1,975 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#EFEBE6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1D1915" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Buku Kirim">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<style>
+#cadangan{margin-top:28px;padding:14px 16px}
+#cadangan summary{cursor:pointer;font-weight:600;min-height:32px}
+#cadangan .cd-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+#cadangan textarea{width:100%;min-height:110px;margin-top:12px;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:12px/1.4 var(--f-mono)}
+</style>
+</head><body>
+<title>Buku Kirim</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: satu kolom sempit seperti lembar surat jalan. Dua mode (FCL, LCL). Tiap barang punya 1-2 isian, tiap isian punya ukuran ball, isi per ball, dan qty. Hasil ditulis sebagai baris berpemisah garis putus-putus dengan satu angka besar di atasnya. */
+:root{
+  --bg:#EFEBE6; --surface:#FBF9F6; --ink:#2E2822; --muted:#6F655B; --line:#D7CEC4;
+  --accent:#7A5236; --accent-ink:#FFFFFF; --bar:#DDD4CA;
+  --good:#3D6B47; --warn:#A5671A; --bad:#A8352A;
+  --f-display:'Barlow Condensed','Arial Narrow',sans-serif;
+  --f-body:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1D1915; --surface:#28231E; --ink:#EDE6DF; --muted:#A89D92; --line:#40382F;
+    --accent:#C99A73; --accent-ink:#1D1915; --bar:#3A332C;
+    --good:#86C595; --warn:#E2B15A; --bad:#F08C7D; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#1D1915; --surface:#28231E; --ink:#EDE6DF; --muted:#A89D92; --line:#40382F;
+  --accent:#C99A73; --accent-ink:#1D1915; --bar:#3A332C;
+  --good:#86C595; --warn:#E2B15A; --bad:#F08C7D; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body)}
+.wrap{max-width:760px;margin:0 auto;padding-block:20px 64px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 16px;
+  padding-bottom:12px;border-bottom:2px solid var(--ink)}
+h1{margin:0;font:700 36px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.tag{color:var(--muted);font-size:13px}
+.tabs{display:flex;gap:4px;margin:14px 0 14px;border-bottom:1px solid var(--line)}
+.tab{flex:1;min-width:0;min-height:46px;background:none;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;
+  color:var(--muted);font:600 16px var(--f-body);letter-spacing:.04em;cursor:pointer}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sub{margin:0;font:600 13px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+p{margin:0}
+.lead{color:var(--muted);margin-bottom:16px;max-width:62ch}
+.hint{color:var(--muted);font-size:14px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field>span{font-size:12px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+input,select{width:100%;min-width:0;min-height:46px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;
+  background:var(--surface);color:var(--ink);font:16px var(--f-body)}
+input.num{font-family:var(--f-mono)}
+.check{display:flex;align-items:center;gap:10px;min-height:46px}
+.check input{width:20px;height:20px;min-height:0;accent-color:var(--accent)}
+.btn{min-height:46px;padding:0 18px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);
+  font:600 15px var(--f-body);cursor:pointer}
+.lnk{min-height:40px;padding:0 6px;background:none;border:0;color:var(--accent);font:600 14px var(--f-body);cursor:pointer}
+.lnk.bad{color:var(--bad)}
+.notice{padding:10px 12px;border:1px dashed var(--line);border-radius:6px;color:var(--muted);font-size:14px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px}
+.item{display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.item-head,.entry-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.entry{display:grid;gap:10px;padding-top:12px;border-top:1px dashed var(--line)}
+.rowout{font:500 13px var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.subtot{font:600 13px var(--f-mono);color:var(--ink);font-variant-numeric:tabular-nums;padding-top:8px;border-top:1px solid var(--line)}
+.bars{display:grid;gap:8px}
+.bar-row{display:grid;grid-template-columns:52px minmax(0,1fr) 56px;gap:10px;align-items:center;font-size:13px;color:var(--muted)}
+.bar{height:8px;background:var(--bar);border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bar.warn i{background:var(--warn)}
+.bar.over i{background:var(--bad)}
+.pct{text-align:right;font:500 13px var(--f-mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+.over-note{color:var(--bad);font-weight:600;font-size:14px}
+.result{margin-top:22px;padding-top:14px;border-top:2px solid var(--ink);display:flex;flex-direction:column;gap:12px}
+.big{font:700 68px/1 var(--f-display);letter-spacing:.01em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.big small{margin-left:8px;font-size:24px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.kv{display:flex;align-items:baseline;gap:12px;padding:8px 0;border-bottom:1px dashed var(--line)}
+.kv .k{flex:1;min-width:0}
+.kv .v{font:500 15px var(--f-mono);font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere;max-width:60%}
+.kv.total{border-bottom:2px solid var(--ink);font-weight:600}
+.kv.total .v{font-size:19px;font-weight:600}
+.lines{list-style:none;margin:0;padding:0}
+.lines li{padding:8px 0;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:2px}
+.lines .m{font:400 13px var(--f-mono);color:var(--muted);overflow-wrap:anywhere}
+.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+@media (max-width:480px){.toolbar{grid-template-columns:minmax(0,1fr)}}
+.list{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.card h3{margin:0;font:600 17px/1.3 var(--f-body);overflow-wrap:anywhere}
+.badge{align-self:flex-start;padding:1px 7px;border:1px dashed var(--line);border-radius:4px;font:600 12px var(--f-mono);letter-spacing:.04em;color:var(--muted)}
+.c-act{display:flex;gap:6px;border-top:1px solid var(--line);padding-top:4px}
+.actions{display:flex;flex-wrap:wrap;gap:10px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn[disabled]{opacity:.6;cursor:default}
+.err{color:var(--bad);font-weight:600}
+.t-good{color:var(--good);font-weight:600}
+.t-bad{color:var(--bad);font-weight:600}
+.t-warn{color:var(--warn);font-weight:600}
+@media (prefers-reduced-motion:no-preference){.bar i{transition:width .25s ease}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Buku Kirim</h1>
+    <span class="tag">Hitung kubikasi FCL dan LCL</span>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-mode="fcl" aria-selected="true">FCL</button>
+    <button class="tab" role="tab" data-mode="lcl" aria-selected="false">LCL</button>
+    <button class="tab" role="tab" data-mode="barang" aria-selected="false">Barang</button>
+    <button class="tab" role="tab" data-mode="riwayat" aria-selected="false">Riwayat</button>
+  </div>
+  <p class="lead" id="lead"></p>
+
+  <div id="calc">
+  <div class="stack">
+    <div id="box-block" class="stack">
+      <div class="grid g2">
+        <label class="field"><span>Kontainer</span>
+          <select id="box">
+            <option value="20">20 ft</option>
+            <option value="40hc">40 ft HC</option>
+            <option value="kustom">Kustom</option>
+          </select></label>
+        <label class="check" style="align-self:end"><input type="checkbox" id="rot" checked><span>Ball boleh ditidurkan</span></label>
+      </div>
+      <div class="grid g3">
+        <label class="field"><span>Panjang dalam cm</span><input class="num" id="bP" inputmode="decimal"></label>
+        <label class="field"><span>Lebar dalam cm</span><input class="num" id="bL" inputmode="decimal"></label>
+        <label class="field"><span>Tinggi dalam cm</span><input class="num" id="bT" inputmode="decimal"></label>
+      </div>
+      <p class="hint">Ukuran dalam kontainer standar. Bisa diubah kalau kontainer Anda berbeda.</p>
+    </div>
+
+    <div id="sample-note" class="notice" hidden>Angka di bawah hanya contoh. Ganti dengan data Anda atau <button class="lnk bad" data-act="clear">kosongkan semua</button>.</div>
+
+    <p class="sub">Barang</p>
+    <div class="stack" id="items"></div>
+    <div><button class="btn" data-act="add-item">+ Tambah barang</button></div>
+  </div>
+
+  <div class="result" id="out"></div>
+  <div id="hsave" class="stack" style="margin-top:16px"></div>
+  <div style="margin-top:20px"><button class="lnk bad" data-act="clear">Kosongkan semua isian</button></div>
+  </div>
+
+  <div id="barang" hidden>
+    <div id="b-body"><p class="hint">Memuat database barang…</p></div>
+  </div>
+
+  <div id="riwayat" hidden>
+    <div id="r-body"></div>
+  </div>
+
+  <details id="cadangan" class="card">
+    <summary>Cadangan data</summary>
+    <p class="hint">Simpan semua barang, kategori, dan riwayat ke satu file. Pakai saat ganti HP, pindah alamat aplikasi, atau sebagai pengaman.</p>
+    <div class="cd-row">
+      <button type="button" class="btn primary" data-cd="unduh">Unduh cadangan</button>
+      <button type="button" class="btn" data-cd="bagikan" id="cd-share">Bagikan file</button>
+      <button type="button" class="btn" data-cd="salin">Salin sebagai teks</button>
+    </div>
+    <p class="sub" style="margin-top:18px">Impor</p>
+    <p class="hint">Data dari file digabung dengan data yang sudah ada. Data dengan ID yang sama ditimpa, data lain tidak dihapus.</p>
+    <div class="cd-row">
+      <label class="btn" style="display:inline-flex;align-items:center;cursor:pointer">Pilih file cadangan<input type="file" id="cd-file" accept=".json,application/json" hidden></label>
+      <button type="button" class="btn" data-cd="impor-teks">Impor dari teks</button>
+    </div>
+    <textarea id="cd-text" spellcheck="false" placeholder="Teks cadangan muncul di sini. Untuk impor dari teks, tempel isi cadangan di sini lalu tekan Impor dari teks."></textarea>
+    <p class="hint" id="cd-msg" role="status"></p>
+  </details>
+</div>
+
+<script>
+(function(){
+'use strict';
+const $=(s,r)=>(r||document).querySelector(s);
+const $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nf=new Intl.NumberFormat('id-ID',{maximumFractionDigits:3});
+const nf1=new Intl.NumberFormat('id-ID',{maximumFractionDigits:1});
+const nf0=new Intl.NumberFormat('id-ID',{maximumFractionDigits:0});
+const num=v=>{const n=parseFloat(String(v==null?'':v).replace(',','.'));return isFinite(n)&&n>0?n:0;};
+
+const KEY='buku-kirim-kubikasi-v1';
+const BOX={'20':{nama:'20 ft',P:589,L:235,T:239},'40hc':{nama:'40 ft HC',P:1203,L:235,T:269}};
+const blankEntry=()=>({p:'',l:'',t:'',isi:'',qty:''});
+const blankItem=()=>({nama:'',entries:[blankEntry()]});
+const sample=()=>({mode:'fcl',box:'20',P:'589',L:'235',T:'239',rot:true,contoh:true,items:[
+  {nama:'Kemeja polos',entries:[{p:'70',l:'50',t:'40',isi:'100',qty:'12000'},{p:'60',l:'40',t:'30',isi:'60',qty:'500'}]},
+  {nama:'Kaos kaki',entries:[{p:'50',l:'40',t:'30',isi:'200',qty:'6000'}]}
+]});
+function load(){
+  try{
+    const s=JSON.parse(localStorage.getItem(KEY));
+    if(s&&Array.isArray(s.items)&&s.items.length&&s.items.every(i=>Array.isArray(i.entries)&&i.entries.length))return s;
+  }catch(e){}
+  return sample();
+}
+let S=load();
+if(!BOX[S.box]&&S.box!=='kustom')S.box='20';
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+
+/* ---------- hitungan ---------- */
+function calcEntry(e){
+  const p=num(e.p),l=num(e.l),t=num(e.t),isi=num(e.isi),qty=num(e.qty);
+  const balls=(isi>0&&qty>0)?Math.ceil(qty/isi-1e-9):0;
+  const vb=p*l*t/1e6;
+  const rem=balls?qty-(balls-1)*isi:0;
+  return {p,l,t,isi,qty,balls,vb,vol:balls*vb,rem,partial:balls>0&&rem<isi-1e-9};
+}
+function bestFit(cap,item,rot){
+  const [p,l,t]=item;
+  const perms=rot?[[p,l,t],[p,t,l],[l,p,t],[l,t,p],[t,p,l],[t,l,p]]:[[p,l,t],[l,p,t]];
+  let best=null;
+  perms.forEach(o=>{
+    const nx=Math.floor(cap.P/o[0]+1e-9),ny=Math.floor(cap.L/o[1]+1e-9),nz=Math.floor(cap.T/o[2]+1e-9);
+    const n=nx*ny*nz;
+    if(!best||n>best.n)best={n,nx,ny,nz};
+  });
+  return best;
+}
+/* Pencarian susunan campuran: kontainer dipotong menjadi blok-blok, tiap blok diisi dengan orientasi terbaiknya (guillotine). Dibatasi supaya tetap cepat. */
+const PK={};
+function packMax(cap,item,rot){
+  const cp=[Math.floor(cap.P+1e-9),Math.floor(cap.L+1e-9),Math.floor(cap.T+1e-9)];
+  const bd=item.map(v=>Math.max(1,Math.ceil(v-1e-9)));
+  const key=cp.join(',')+'|'+bd.join(',')+'|'+(rot?1:0);
+  if(PK[key])return PK[key];
+  const s=bestFit(cap,item,rot);
+  let res={n:s.n,grid:s.nx+'×'+s.ny+'×'+s.nz,mix:false,exact:true};
+  const axisDims=rot?[bd,bd,bd]:[[bd[0],bd[1]],[bd[0],bd[1]],[bd[2]]];
+  const perms=rot?[[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]]:[[0,1,2],[1,0,2]];
+  const R=[0,1,2].map(d=>{
+    const ok=new Uint8Array(cp[d]+1);ok[0]=1;const pts=[],idx=new Int32Array(cp[d]+1);let last=0;
+    for(let v=0;v<=cp[d];v++){
+      if(v>0)for(const a of axisDims[d]){if(v>=a&&ok[v-a]){ok[v]=1;break;}}
+      if(ok[v]){pts.push(v);last=pts.length-1;}
+      idx[v]=last;
+    }
+    return {pts,idx};
+  });
+  const NX=R[0].pts.length,NY=R[1].pts.length,NZ=R[2].pts.length;
+  if(NX*NY*NZ>1.5e7){res.exact=false;PK[key]=res;return res;}
+  const memo=new Int32Array(NX*NY*NZ).fill(-1);
+  let work=0;const LIMIT=6e7;
+  const base=(x,y,z)=>{let b=0;for(const p of perms){const n=Math.floor(x/bd[p[0]])*Math.floor(y/bd[p[1]])*Math.floor(z/bd[p[2]]);if(n>b)b=n;}return b;};
+  const f=(i,j,k)=>{
+    const mi=(i*NY+j)*NZ+k;if(memo[mi]>=0)return memo[mi];
+    const x=R[0].pts[i],y=R[1].pts[j],z=R[2].pts[k];
+    let best=base(x,y,z);
+    for(let a=1;a<i;a++){const x1=R[0].pts[a],x2=x-x1;if(x2<x1)break;if(++work>LIMIT)throw 0;const v=f(a,j,k)+f(R[0].idx[x2],j,k);if(v>best)best=v;}
+    for(let a=1;a<j;a++){const y1=R[1].pts[a],y2=y-y1;if(y2<y1)break;if(++work>LIMIT)throw 0;const v=f(i,a,k)+f(i,R[1].idx[y2],k);if(v>best)best=v;}
+    for(let a=1;a<k;a++){const z1=R[2].pts[a],z2=z-z1;if(z2<z1)break;if(++work>LIMIT)throw 0;const v=f(i,j,a)+f(i,j,R[2].idx[z2]);if(v>best)best=v;}
+    memo[mi]=best;return best;
+  };
+  try{
+    const n=f(NX-1,NY-1,NZ-1);
+    if(n>res.n){res.n=n;res.mix=true;}
+  }catch(err){res.exact=false;}
+  PK[key]=res;return res;
+}
+function evalLoad(items,cap,rot){
+  const used=[];let balls=0,pcs=0,vol=0;
+  (items||[]).forEach(it=>(it.entries||[]).forEach(e=>{
+    const c=calcEntry(e);
+    if(c.balls>0&&c.vb>0){used.push(c);balls+=c.balls;pcs+=c.qty;vol+=c.vol;}
+  }));
+  const cv=cap.P*cap.L*cap.T/1e6;
+  const fits=used.map(r=>packMax(cap,[r.p,r.l,r.t],rot));
+  const noFit=used.some((r,k)=>fits[k].n<1);
+  const share=used.reduce((a,r,k)=>a+(fits[k].n>0?r.balls/fits[k].n:0),0);
+  return {used,fits,balls,pcs,vol,cv,pct:cv?vol/cv*100:0,noFit,share,muat:used.length>0&&!noFit&&share<=1+1e-9};
+}
+function computeAll(){
+  const rows=[];const tot={balls:0,pcs:0,vol:0};
+  S.items.forEach((it,i)=>it.entries.forEach((e,j)=>{
+    const c=calcEntry(e);
+    c.i=i;c.j=j;
+    c.label=(it.nama.trim()||('Barang '+(i+1)))+(catName(it.kat)?' ('+catName(it.kat)+')':'')+(it.entries.length>1?' · isian '+(j+1):'');
+    rows.push(c);
+    if(c.balls>0){tot.balls+=c.balls;tot.pcs+=c.qty;tot.vol+=c.vol;}
+  }));
+  return {rows,tot};
+}
+function bar(label,pct){
+  const cls=pct>100?'over':(pct>90?'warn':'');
+  return '<div class="bar-row"><span>'+label+'</span><div class="bar '+cls+'"><i style="width:'+Math.min(100,pct)+'%"></i></div><span class="pct">'+nf1.format(pct)+'%</span></div>';
+}
+
+/* ---------- tampilan barang ---------- */
+function entryHtml(e,j,n){
+  const f=(label,key)=>'<label class="field"><span>'+label+'</span><input class="num" inputmode="decimal" data-f="'+key+'" value="'+esc(e[key])+'"></label>';
+  return '<div class="entry" data-j="'+j+'">'+
+    '<div class="entry-head"><span class="sub">Isian '+(j+1)+'</span>'+(n>1?'<button type="button" class="lnk bad" data-act="del-entry" data-j="'+j+'">Hapus isian</button>':'')+'</div>'+
+    '<div class="grid g3">'+f('Panjang ball cm','p')+f('Lebar ball cm','l')+f('Tinggi ball cm','t')+'</div>'+
+    '<div class="grid g2">'+f('Isi per ball (pcs)','isi')+f('Qty dikirim (pcs)','qty')+'</div>'+
+    '<div class="rowout"></div></div>';
+}
+function itemHtml(it,i){
+  return '<div class="item" data-i="'+i+'">'+
+    '<div class="item-head"><strong>Barang '+(i+1)+(catName(it.kat)?' · '+catName(it.kat):'')+'</strong><button type="button" class="lnk bad" data-act="del-item" data-i="'+i+'">Hapus</button></div>'+
+    '<label class="field"><span>Ambil dari database barang</span><select data-pick="'+i+'">'+pickOptions()+'</select></label>'+
+    '<label class="field"><span>Nama barang</span><input data-f="nama" value="'+esc(it.nama)+'" placeholder="mis. Kemeja polos" autocomplete="off"></label>'+
+    it.entries.map((e,j)=>entryHtml(e,j,it.entries.length)).join('')+
+    (it.entries.length<2?'<div><button type="button" class="btn" data-act="add-entry" data-i="'+i+'">+ Isian dengan ukuran ball lain</button></div>':'')+
+    '<div class="subtot"></div></div>';
+}
+function renderItems(){
+  $('#items').innerHTML=S.items.map(itemHtml).join('');
+  update();
+}
+function updateOuts(){
+  const {rows}=computeAll();
+  const sub={};
+  rows.forEach(c=>{
+    const el=$('#items .item[data-i="'+c.i+'"] .entry[data-j="'+c.j+'"] .rowout');
+    if(el){
+      let t;
+      if(!(c.p&&c.l&&c.t))t='Isi ukuran ball.';
+      else if(!c.isi)t='Isi jumlah pcs per ball.';
+      else if(!c.qty)t='Isi qty yang dikirim.';
+      else{
+        t='= '+nf0.format(c.balls)+' ball · '+nf.format(c.vol)+' m³';
+        if(c.partial)t+=' · ball terakhir berisi '+nf.format(c.rem)+' pcs';
+      }
+      el.textContent=t;
+    }
+    const s=sub[c.i]||(sub[c.i]={balls:0,vol:0});
+    if(c.balls>0){s.balls+=c.balls;s.vol+=c.vol;}
+  });
+  S.items.forEach((_,i)=>{
+    const el=$('#items .item[data-i="'+i+'"] .subtot');
+    const s=sub[i]||{balls:0,vol:0};
+    if(el)el.textContent='Subtotal barang: '+nf0.format(s.balls)+' ball · '+nf.format(s.vol)+' m³';
+  });
+}
+
+/* ---------- hasil ---------- */
+function renderOut(){
+  const {rows,tot}=computeAll();
+  const out=$('#out');
+  const used=rows.filter(r=>r.balls>0&&r.vb>0);
+  if(!used.length){out.innerHTML='<p class="hint">Isi ukuran ball, isi per ball, dan qty untuk melihat hasil.</p>';return;}
+  const kvTotals=
+    '<div class="kv"><span class="k">Total ball</span><span class="v">'+nf0.format(tot.balls)+'</span></div>'+
+    '<div class="kv"><span class="k">Total qty</span><span class="v">'+nf0.format(tot.pcs)+' pcs</span></div>';
+  if(S.mode==='lcl'){
+    const lines=used.map(r=>'<li><span>'+esc(r.label)+'</span><span class="m">'+nf.format(r.p)+'×'+nf.format(r.l)+'×'+nf.format(r.t)+' cm · '+nf0.format(r.balls)+' ball · isi '+nf0.format(r.isi)+' pcs · '+nf.format(r.vol)+' m³</span></li>').join('');
+    out.innerHTML=
+      '<div class="big">'+nf.format(tot.vol)+'<small>m³ total</small></div>'+
+      '<div>'+kvTotals+'<div class="kv total"><span class="k">Kubikasi total</span><span class="v">'+nf.format(tot.vol)+' m³</span></div></div>'+
+      '<p class="sub">Per isian</p><ul class="lines">'+lines+'</ul>'+
+      '<p class="hint">Volume dihitung dari ukuran ball penuh, termasuk ball terakhir yang isinya belum penuh.</p>';
+    return;
+  }
+  const P=num(S.P),L=num(S.L),T=num(S.T);
+  if(!(P&&L&&T)){out.innerHTML='<p class="hint">Isi ukuran dalam kontainer untuk melihat hasil FCL.</p>';return;}
+  const cv=P*L*T/1e6,pct=tot.vol/cv*100,sisa=cv-tot.vol;
+  const nama=BOX[S.box]?BOX[S.box].nama:'kustom';
+  /* Estimasi masuk: tiap isian dibandingkan dengan jumlah maksimal ball sejenis yang muat (sudah memperhitungkan susunan), lalu porsinya dijumlahkan. */
+  const fits=used.map(r=>packMax({P,L,T},[r.p,r.l,r.t],S.rot));
+  const noFit=used.some((r,k)=>fits[k].n<1);
+  const share=used.reduce((a,r,k)=>a+(fits[k].n>0?r.balls/fits[k].n:0),0);
+  const spct=share*100;
+  const muat=!noFit&&share<=1+1e-9;
+  const sisaShare=Math.max(0,1-share);
+  const lines=used.map((r,k)=>{
+    const fit=fits[k];
+    const extra=fit.n>0?Math.floor(sisaShare*fit.n+1e-9):0;
+    const mine=fit.n>0?r.balls/fit.n*100:0;
+    return '<li><span>'+esc(r.label)+'</span><span class="m">'+nf0.format(r.balls)+' ball · '+nf.format(r.vol)+' m³</span>'+
+      (fit.n<1?'<span class="m err">Ukuran ball ini tidak muat di dalam kontainer.</span>':
+      '<span class="m">Maksimal muat jika hanya ukuran ini: '+nf0.format(fit.n)+' ball ('+(fit.mix?'susunan campuran':fit.grid)+') · memakai ±'+nf1.format(mine)+'% ruang · sisa ruang setara ±'+nf0.format(extra)+' ball lagi</span>')+'</li>';
+  }).join('');
+  const cal=calibrate({P,L,T});
+  const st=noFit?'tidak':statusFor(share,cal);
+  const stLabel={muat:'MUAT',mungkin:'MUNGKIN MUAT',tidak:'TIDAK MUAT'}[st];
+  const stCls={muat:'good',mungkin:'warn',tidak:'bad'}[st];
+  const basis=st==='mungkin'?'di atas batas teruji riwayat, di dalam kapasitas teori':
+    (cal.okMax!=null&&share<=cal.okMax+1e-9?'teruji riwayat':
+    (cal.failMin!=null&&share>=cal.failMin-1e-9&&share>(cal.okMax==null?-1:cal.okMax)?'melewati batas gagal riwayat':'hitungan teori'));
+  const calLines=
+    (cal.n?'<p class="hint">Dari '+cal.n+' kiriman tersimpan di kontainer ini: '+
+      (cal.okMax!=null?'tercapai sampai <b>'+nf1.format(cal.okMax*100)+'%</b> susunan':'belum ada data muat')+
+      (cal.failMin!=null?', gagal mulai <b>'+nf1.format(cal.failMin*100)+'%</b>.':'.')+'</p>':
+      '<p class="hint">Belum ada riwayat untuk kontainer ini, jadi status memakai hitungan teori saja.</p>');
+  let tip='';
+  if(noFit)tip='<p class="over-note">Ada ukuran ball yang lebih besar dari ruang dalam kontainer.</p>';
+  else if(st==='muat')tip='<p class="hint">'+(basis==='teruji riwayat'?'Susunan ini tidak melebihi yang pernah berhasil Anda muat.':'Berdasarkan hitungan teori, muatan masuk dengan susunan rapi.')+' Perkiraan sisa ruang ±'+nf1.format(sisaShare*100)+'%.</p>';
+  else if(st==='mungkin')tip='<p class="hint">Susunan '+nf1.format(spct)+'% lebih tinggi dari yang pernah berhasil ('+nf1.format(cal.okMax*100)+'%), tapi masih dalam kapasitas teori. Bisa dicoba dengan penataan sangat rapi. Catat hasilnya ke riwayat supaya batas berikutnya lebih akurat.</p>';
+  else{
+    const target=cal.okMax!=null?cal.okMax:1;
+    const kurang=Math.ceil(tot.balls*Math.max(0,spct/100-target)/(spct/100));
+    tip='<p class="hint">'+(basis==='melewati batas gagal riwayat'?'Susunan '+nf1.format(spct)+'% sudah melewati batas yang pernah gagal ('+nf1.format(cal.failMin*100)+'%).':(cal.okMax!=null&&cal.okMax>1?'Susunan '+nf1.format(spct)+'% melebihi yang pernah berhasil ('+nf1.format(cal.okMax*100)+'%) dan kapasitas teori.':'Susunan '+nf1.format(spct)+'% melebihi kapasitas teori kontainer.'))+' Kurangi sekitar '+nf0.format(kurang)+' ball supaya sesuai '+(cal.okMax!=null?'batas yang pernah berhasil':'kapasitas teori')+'.</p>';
+  }
+  const est=
+    '<div class="kv total" style="margin-top:4px"><span class="k">Estimasi masuk</span><span class="v t-'+stCls+'">'+stLabel+'</span></div>'+
+    '<p class="hint" style="margin-top:-6px">Dasar: '+basis+'</p>'+
+    (noFit?'':'<div class="bars">'+bar('Susunan',spct)+'</div>')+
+    tip+calLines;
+  out.innerHTML=
+    '<div class="big">'+nf.format(tot.vol)+'<small>m³ muatan</small></div>'+
+    '<p class="hint">dari '+nf.format(cv)+' m³ ruang dalam kontainer '+esc(nama)+'</p>'+
+    '<div class="bars">'+bar('Volume',pct)+'</div>'+
+    (pct>100?'<p class="over-note">Muatan melebihi kontainer sebesar '+nf.format(-sisa)+' m³.</p>':'')+
+    est+
+    histBlock({P,L,T},pct,S.items.map(it=>String(it.nama||'').trim().toLowerCase()).filter(Boolean))+
+    '<div>'+kvTotals+
+      '<div class="kv"><span class="k">Kapasitas kontainer</span><span class="v">'+nf.format(cv)+' m³</span></div>'+
+      '<div class="kv total"><span class="k">'+(sisa>=0?'Sisa ruang':'Kelebihan muatan')+'</span><span class="v">'+nf.format(Math.abs(sisa))+' m³</span></div></div>'+
+    '<p class="sub">Per isian</p><ul class="lines">'+lines+'</ul>'+
+    '<p class="hint">Persen volume dihitung dari volume ball, tanpa celah susunan. Status estimasi masuk memakai hitungan teori yang dikoreksi riwayat kiriman di kontainer yang sama (susunan 100% = batas teori). Hitungan teori mencari susunan terbaik per ukuran ball, termasuk susunan campuran orientasi (ball ditidurkan atau dibalik di blok yang berbeda). Kalau ada beberapa ukuran ball berbeda, tiap ukuran dihitung terpisah lalu porsinya dijumlahkan, jadi hasilnya perkiraan yang cenderung hati-hati. Susunan ini butuh penataan rapi di lapangan.</p>';
+}
+
+/* ---------- riwayat: pembanding di hasil FCL ---------- */
+const H={q:'',saveOpen:false,draft:null,confirmId:null,err:''};
+const today=()=>{const d=new Date();const z=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());};
+const histCap=h=>({P:num(h.P),L:num(h.L),T:num(h.T)});
+const histNames=h=>(h.items||[]).map(it=>String(it.nama||'').trim().toLowerCase()).filter(Boolean);
+function histSummary(h){
+  const ns=(h.items||[]).map(it=>(it.nama||'Tanpa nama')+(catName(it.kat)?' ('+catName(it.kat)+')':''));
+  return ns.length>3?ns.slice(0,3).join(', ')+' +'+(ns.length-3)+' lagi':ns.join(', ');
+}
+function fmtTgl(s){const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?m[3]+'/'+m[2]+'/'+m[1]:(s||'-');}
+/* Kalibrasi dari riwayat: "susunan" = porsi kapasitas teoretis yang dipakai muatan (100% = batas hitungan). okMax = susunan tertinggi yang terbukti masuk, failMin = susunan terendah yang terbukti gagal. */
+function loadedShare(h,ev){
+  if(!ev.used.length||ev.noFit)return null;
+  if(h.hasil==='muat')return ev.share;
+  const m=num(h.masuk);
+  return m>0&&ev.balls>0?ev.share*Math.min(m,ev.balls)/ev.balls:null;
+}
+function calibrate(cap){
+  const hs=(B.hist||[]).filter(h=>{const c=histCap(h);return c.P===cap.P&&c.L===cap.L&&c.T===cap.T;});
+  let okMax=null,failMin=null,n=0;
+  hs.forEach(h=>{
+    const ev=evalLoad(h.items,histCap(h),h.rot);
+    if(!ev.used.length||ev.noFit)return;
+    n++;
+    const ls=loadedShare(h,ev);
+    if(ls!=null&&(okMax==null||ls>okMax))okMax=ls;
+    if(h.hasil==='tidak'&&(failMin==null||ev.share<failMin))failMin=ev.share;
+  });
+  return {okMax:okMax,failMin:failMin,n:n};
+}
+function statusFor(s,cal){
+  if(cal.okMax!=null&&s<=cal.okMax+1e-9)return 'muat';
+  if(cal.failMin!=null&&s>=cal.failMin-1e-9)return 'tidak';
+  if(s<=1+1e-9)return cal.okMax!=null?'mungkin':'muat';
+  return 'tidak';
+}
+function histBlock(cap,pct,names){
+  const hist=(B.hist||[]).filter(h=>{const c=histCap(h);return c.P===cap.P&&c.L===cap.L&&c.T===cap.T;});
+  if(!hist.length)return '<div><p class="sub">Pembanding historis</p><p class="hint" style="margin-top:6px">Belum ada riwayat untuk ukuran kontainer ini. Simpan hasil kiriman Anda di bawah supaya jadi pembanding.</p></div>';
+  const info=hist.map(h=>{
+    const ev=evalLoad(h.items,histCap(h),h.rot);
+    const shared=histNames(h).filter(n=>names.indexOf(n)>=0).length;
+    return {h:h,ev:ev,shared:shared,d:Math.abs(ev.pct-pct)};
+  });
+  const okp=info.filter(x=>x.h.hasil==='muat').map(x=>x.ev.pct);
+  const nop=info.filter(x=>x.h.hasil==='tidak').map(x=>x.ev.pct);
+  let ref='';
+  if(okp.length)ref+='Pernah muat sampai '+nf1.format(Math.max.apply(null,okp))+'% volume ('+okp.length+' kiriman). ';
+  if(nop.length)ref+='Pernah tidak muat mulai '+nf1.format(Math.min.apply(null,nop))+'% volume ('+nop.length+' kiriman). ';
+  const verdict='';
+  info.sort((a,b)=>b.shared-a.shared||a.d-b.d);
+  const rowsH=info.slice(0,3).map(x=>{
+    const h=x.h;
+    return '<li><span>'+fmtTgl(h.tgl)+' · '+esc(histSummary(h))+'</span>'+
+      '<span class="m">'+nf0.format(x.ev.balls)+' ball · '+nf1.format(x.ev.pct)+'% volume · '+(h.hasil==='muat'?'<span class="t-good">muat</span>':'<span class="t-bad">tidak muat</span>')+
+      (x.shared?' · '+x.shared+' barang sama':'')+(h.catatan?' · '+esc(h.catatan):'')+'</span></li>';
+  }).join('');
+  return '<div><p class="sub">Pembanding historis</p>'+(ref?'<p class="hint" style="margin-top:6px">'+ref+'</p>':'')+verdict+'<ul class="lines">'+rowsH+'</ul></div>';
+}
+
+function update(){
+  updateOuts();renderOut();paintHsave();
+  $('#sample-note').hidden=!S.contoh;
+  save();
+}
+
+/* ---------- simpan ke riwayat ---------- */
+function paintHsave(){
+  const el=$('#hsave');if(!el)return;
+  const {rows}=computeAll();
+  const ok=S.mode==='fcl'&&rows.some(r=>r.balls>0&&r.vb>0)&&num(S.P)&&num(S.L)&&num(S.T);
+  if(!ok){el.innerHTML='';return;}
+  if(!H.saveOpen){el.innerHTML='<div><button type="button" class="btn" data-hact="open">Simpan ke riwayat</button></div>';return;}
+  const d=H.draft;
+  el.innerHTML='<p class="sub">Simpan ke riwayat</p>'+
+    '<div class="grid g2">'+
+      '<label class="field"><span>Tanggal kirim</span><input type="date" data-hf="tgl" value="'+esc(d.tgl)+'"></label>'+
+      '<label class="field"><span>Hasil di lapangan</span><select data-hf="hasil"><option value="muat"'+(d.hasil==='muat'?' selected':'')+'>Muat semua</option><option value="tidak"'+(d.hasil==='tidak'?' selected':'')+'>Tidak muat semua</option></select></label>'+
+    '</div>'+
+    '<div class="grid g2">'+
+      '<label class="field"><span>Ball yang benar-benar masuk (opsional)</span><input class="num" inputmode="decimal" data-hf="masuk" value="'+esc(d.masuk)+'"></label>'+
+      '<label class="field"><span>Catatan (opsional)</span><input data-hf="catatan" value="'+esc(d.catatan)+'" placeholder="mis. tujuan, no. kontainer" autocomplete="off"></label>'+
+    '</div>'+
+    '<p class="err" id="herr" hidden></p>'+
+    '<div class="actions"><button type="button" class="btn primary" id="hsv" data-hact="save">Simpan</button><button type="button" class="btn" data-hact="cancel">Batal</button></div>';
+  if(H.err){const e=$('#herr');e.textContent=H.err;e.hidden=false;}
+}
+function saveHistory(){
+  const d=H.draft;
+  const P=num(S.P),L=num(S.L),T=num(S.T);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d.tgl)){H.err='Isi tanggal kirim.';paintHsave();return;}
+  const items=[];
+  S.items.forEach(it=>{
+    const ents=it.entries.map(e=>({p:num(e.p),l:num(e.l),t:num(e.t),isi:num(e.isi),qty:num(e.qty)})).filter(e=>e.p&&e.l&&e.t&&e.isi&&e.qty);
+    if(ents.length)items.push({nama:String(it.nama||'').trim(),kat:catName(it.kat)?it.kat:'',entries:ents});
+  });
+  if(!items.length){H.err='Belum ada isian lengkap untuk disimpan.';paintHsave();return;}
+  const rec={isRiw:true,tgl:d.tgl,hasil:d.hasil,catatan:d.catatan.trim(),masuk:num(d.masuk)||0,P:P,L:L,T:T,
+    kontainer:BOX[S.box]?BOX[S.box].nama:'Kustom',rot:!!S.rot,items:items,createdAt:Date.now()};
+  const btn=$('#hsv');if(btn)btn.disabled=true;
+  BStore.save(rec).then(()=>{H.saveOpen=false;H.draft=null;H.err='';paintHsave();renderOut();},
+    e=>{H.err=bErr(e);paintHsave();});
+}
+$('#hsave').addEventListener('click',e=>{
+  const b=e.target.closest('[data-hact]');if(!b)return;
+  const a=b.dataset.hact;
+  if(a==='open'){H.saveOpen=true;H.err='';H.draft={tgl:today(),hasil:'muat',masuk:'',catatan:''};paintHsave();}
+  else if(a==='cancel'){H.saveOpen=false;H.draft=null;H.err='';paintHsave();}
+  else if(a==='save')saveHistory();
+});
+$('#hsave').addEventListener('input',e=>{
+  const t=e.target;if(!t.dataset.hf||!H.draft)return;
+  H.draft[t.dataset.hf]=t.value;
+});
+
+/* ---------- mode dan kontainer ---------- */
+const LEAD={
+  fcl:'Satu kontainer penuh. Lihat berapa persen terisi, sisa ruang, dan berapa ball yang muat. Satu barang bisa punya 2 isian dengan ukuran ball berbeda. Tiap isian berisi ukuran ball, isi pcs per ball, dan qty yang dikirim.',
+  lcl:'Barang gabungan. Hasilnya total kubikasi dalam m³ sebagai dasar hitungan. Satu barang bisa punya 2 isian dengan ukuran ball berbeda. Tiap isian berisi ukuran ball, isi pcs per ball, dan qty yang dikirim.'
+};
+LEAD.barang='Simpan ukuran ball dan isi per ball sekali saja. Saat menghitung di tab FCL atau LCL, barangnya tinggal dipilih dan ukurannya terisi otomatis.';
+LEAD.riwayat='Catatan kiriman FCL yang sudah terjadi, lengkap dengan hasil di lapangan. Dipakai sebagai pembanding hitungan dan referensi untuk kiriman gabungan beberapa barang. Simpan dari tab FCL lewat tombol Simpan ke riwayat.';
+function setMode(m){
+  const isB=m==='barang',isR=m==='riwayat';
+  if(!isB&&!isR)S.mode=m;
+  $$('.tab').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.mode===m)));
+  $('#calc').hidden=isB||isR;
+  $('#barang').hidden=!isB;
+  $('#riwayat').hidden=!isR;
+  $('#box-block').hidden=m!=='fcl';
+  $('#lead').textContent=LEAD[m];
+}
+function syncBox(){
+  $('#box').value=S.box;
+  $('#bP').value=S.P;$('#bL').value=S.L;$('#bT').value=S.T;
+  $('#rot').checked=!!S.rot;
+}
+$('.tabs').addEventListener('click',e=>{
+  const b=e.target.closest('[data-mode]');if(!b)return;
+  setMode(b.dataset.mode);
+  if(b.dataset.mode==='riwayat')paintRiwayat();
+  else if(b.dataset.mode!=='barang')update();
+});
+$('#box').addEventListener('change',e=>{
+  const k=e.target.value;S.box=k;
+  if(BOX[k]){S.P=String(BOX[k].P);S.L=String(BOX[k].L);S.T=String(BOX[k].T);syncBox();}
+  update();
+});
+['bP','bL','bT'].forEach((id,n)=>$('#'+id).addEventListener('input',e=>{
+  S['PLT'[n]]=e.target.value;S.box='kustom';$('#box').value='kustom';update();
+}));
+$('#rot').addEventListener('change',e=>{S.rot=e.target.checked;update();});
+
+/* ---------- isian barang ---------- */
+$('#items').addEventListener('input',e=>{
+  const t=e.target,itemEl=t.closest('.item');
+  if(!itemEl||!t.dataset.f)return;
+  const i=+itemEl.dataset.i;
+  if(t.dataset.f==='nama')S.items[i].nama=t.value;
+  else{const j=+t.closest('.entry').dataset.j;S.items[i].entries[j][t.dataset.f]=t.value;}
+  S.contoh=false;update();
+});
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-act]');if(!b)return;
+  const a=b.dataset.act,i=+b.dataset.i,j=+b.dataset.j;
+  if(a==='add-item'){
+    S.items.push(blankItem());renderItems();
+    const all=$$('#items [data-f="nama"]');if(all.length)all[all.length-1].focus();
+  }else if(a==='del-item'){
+    if(S.items.length>1)S.items.splice(i,1);else S.items=[blankItem()];
+    renderItems();
+  }else if(a==='add-entry'){
+    if(S.items[i].entries.length<2){S.items[i].entries.push(blankEntry());renderItems();}
+  }else if(a==='del-entry'){
+    if(S.items[i].entries.length>1){S.items[i].entries.splice(j,1);renderItems();}
+  }else if(a==='clear'){
+    S.items=[blankItem()];S.contoh=false;renderItems();
+  }
+});
+
+/* ---------- database barang ---------- */
+const BKEY='buku-kirim-barang-v1';
+const B={rows:[],cats:[],hist:[],ready:false,view:'list',q:'',kat:'',manage:false,kconf:null,draft:null,editId:null,confirmId:null};
+const DEFAULT_CATS=[['zb-stock','ZB Stock'],['pd-stock','PD Stock'],['zb-fresh','ZB Fresh'],['pd-fresh','PD Fresh']];
+const getCats=()=>B.cats.length?B.cats.map(c=>[c.id,c.nama]):DEFAULT_CATS;
+const catName=k=>{const c=getCats().find(x=>x[0]===k);return c?c[1]:'';};
+const catOptions=(sel,first)=>(first?'<option value="">'+first+'</option>':'')+getCats().map(c=>'<option value="'+esc(c[0])+'"'+(c[0]===sel?' selected':'')+'>'+esc(c[1])+'</option>').join('');
+function pickOptions(){
+  const opt=b=>'<option value="'+esc(b.id)+'">'+esc(b.nama)+'</option>';
+  let h='<option value="">Pilih barang</option>';
+  getCats().forEach(c=>{const rs=B.rows.filter(b=>b.kat===c[0]);if(rs.length)h+='<optgroup label="'+c[1]+'">'+rs.map(opt).join('')+'</optgroup>';});
+  const rest=B.rows.filter(b=>!catName(b.kat));
+  if(rest.length)h+='<optgroup label="Tanpa kategori">'+rest.map(opt).join('')+'</optgroup>';
+  return h;
+}
+function refreshPicks(){$$('[data-pick]').forEach(s=>{s.innerHTML=pickOptions();});}
+function bErr(e){
+  const c=e&&e.code;
+  if(c==='invalid_argument')return 'Tampilan ini tidak punya izin menyimpan data.';
+  if(c==='quota_exceeded')return 'Penyimpanan penuh. Hapus data lama terlebih dahulu.';
+  return 'Gagal menyimpan. Coba lagi sebentar lagi.';
+}
+const BStore={
+  mode:'memory',col:null,rows:[],
+  init(){
+    const get=(window.claude&&window.claude.use)?window.claude.use('db'):Promise.resolve(null);
+    return Promise.resolve(get).catch(()=>null).then(db=>{
+      if(db){
+        try{
+          this.col=db.collection('barang');this.mode='db';
+          this.col.onSnapshot(s=>onBarang(s.docs.map(d=>{const o=Object.assign({},d.data());o.id=d.id;return o;})),
+            e=>{console.warn('db',e);this.toLocal();});
+          return;
+        }catch(e){console.warn(e);}
+      }
+      this.toLocal();
+    });
+  },
+  toLocal(){
+    this.mode='local';let r=[];
+    try{r=JSON.parse(localStorage.getItem(BKEY)||'[]');}catch(e){}
+    this.rows=Array.isArray(r)?r:[];onBarang(this.rows.slice());
+  },
+  persist(){try{localStorage.setItem(BKEY,JSON.stringify(this.rows));}catch(e){}onBarang(this.rows.slice());},
+  save(rec){
+    if(this.mode==='db'){
+      const body=Object.assign({},rec);const id=body.id;delete body.id;
+      return (id?this.col.doc(id):this.col.doc()).set(body);
+    }
+    const r=Object.assign({},rec);
+    if(!r.id)r.id='l'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    const i=this.rows.findIndex(x=>x.id===r.id);
+    if(i>=0)this.rows[i]=r;else this.rows.push(r);
+    this.persist();return Promise.resolve();
+  },
+  remove(id){
+    if(this.mode==='db')return this.col.doc(id).delete();
+    this.rows=this.rows.filter(x=>x.id!==id);this.persist();return Promise.resolve();
+  }
+};
+function onBarang(rows){
+  B.cats=rows.filter(r=>r&&r.isKat&&r.nama).sort((a,b)=>(a.urut||0)-(b.urut||0)||a.nama.localeCompare(b.nama));
+  B.rows=rows.filter(r=>r&&!r.isKat&&!r.isRiw&&r.nama&&Array.isArray(r.entries)&&r.entries.length).sort((a,b)=>a.nama.localeCompare(b.nama));
+  B.hist=rows.filter(r=>r&&r.isRiw&&Array.isArray(r.items)&&r.items.length).sort((a,b)=>String(b.tgl||'').localeCompare(String(a.tgl||''))||(b.createdAt||0)-(a.createdAt||0));
+  if(B.kat&&B.kat!=='none'&&!catName(B.kat))B.kat='';
+  B.ready=true;refreshPicks();
+  if(B.view==='list'){paintBarang();paintKat();}
+  paintRiwayat();
+  if(S.mode==='fcl'&&!$('#calc').hidden)renderOut();
+}
+/* ---------- tab riwayat ---------- */
+function paintRiwayat(){
+  const box=$('#r-body');if(!box||$('#riwayat').hidden)return;
+  if(!$('#rq')){
+    box.innerHTML='<input type="search" id="rq" placeholder="Cari nama barang, catatan, atau tanggal" aria-label="Cari riwayat">'+
+      '<p class="hint" id="rsum" style="margin-top:12px"></p>'+
+      '<div id="rnote" class="notice" hidden style="margin-top:12px">Data tersimpan di browser ini saja. Buat cadangan lewat bagian Cadangan data di bagian bawah halaman.</div>'+
+      '<div class="list" id="rlist" style="margin-top:12px"></div>';
+    $('#rq').value=H.q;
+  }
+  $('#rnote').hidden=BStore.mode!=='local';
+  if(!B.ready){$('#rlist').innerHTML='<p class="hint">Memuat riwayat…</p>';return;}
+  const q=H.q.trim().toLowerCase();
+  const rows=B.hist.filter(h=>!q||(histSummary(h)+' '+(h.catatan||'')+' '+fmtTgl(h.tgl)+' '+(h.tgl||'')).toLowerCase().indexOf(q)>=0);
+  const okN=B.hist.filter(h=>h.hasil==='muat').length;
+  $('#rsum').textContent=B.hist.length+' kiriman tersimpan · '+okN+' muat · '+(B.hist.length-okN)+' tidak muat';
+  if(!rows.length){
+    $('#rlist').innerHTML='<p class="hint">'+(B.hist.length?'Tidak ada riwayat yang cocok dengan pencarian.':'Belum ada riwayat. Hitung kiriman di tab FCL lalu tekan Simpan ke riwayat.')+'</p>';
+    return;
+  }
+  $('#rlist').innerHTML=rows.map(h=>{
+    const cap=histCap(h),ev=evalLoad(h.items,cap,h.rot);
+    const mix=(h.items||[]).length>1||(h.items||[]).some(it=>(it.entries||[]).length>1);
+    const match=ev.used.length&&(ev.muat===(h.hasil==='muat'));
+    const lines=(h.items||[]).map(it=>(it.entries||[]).map((e,j)=>'<p class="rowout">'+esc(it.nama||'Tanpa nama')+(catName(it.kat)?' ('+esc(catName(it.kat))+')':'')+(it.entries.length>1?' · isian '+(j+1):'')+': '+nf.format(e.p)+'×'+nf.format(e.l)+'×'+nf.format(e.t)+' cm · isi '+nf0.format(e.isi)+' · qty '+nf0.format(e.qty)+' pcs</p>').join('')).join('');
+    return '<article class="card">'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap"><span class="badge">'+esc(String(h.kontainer||'Kustom').toUpperCase())+'</span>'+(mix?'<span class="badge">GABUNGAN</span>':'')+
+        '<span class="badge '+(h.hasil==='muat'?'t-good':'t-bad')+'">'+(h.hasil==='muat'?'MUAT':'TIDAK MUAT')+'</span></div>'+
+      '<h3>'+fmtTgl(h.tgl)+(h.catatan?' · '+esc(h.catatan):'')+'</h3>'+lines+
+      '<div class="kv"><span class="k">Total</span><span class="v">'+nf0.format(ev.balls)+' ball · '+nf.format(ev.vol)+' m³</span></div>'+
+      '<div class="kv"><span class="k">Volume terisi</span><span class="v">'+nf1.format(ev.pct)+'%</span></div>'+
+      (h.masuk?'<div class="kv"><span class="k">Ball benar-benar masuk</span><span class="v">'+nf0.format(h.masuk)+'</span></div>':'')+
+      '<div class="kv"><span class="k">Estimasi teori</span><span class="v">'+(ev.noFit?'Ball tidak muat':(ev.muat?'MUAT':'TIDAK MUAT')+' ('+nf1.format(ev.share*100)+'% susunan)')+'</span></div>'+
+      (loadedShare(h,ev)!=null?'<div class="kv"><span class="k">Tercapai di lapangan</span><span class="v">±'+nf1.format(loadedShare(h,ev)*100)+'% susunan</span></div>':'')+
+      (ev.used.length?'<p class="'+(match?'t-good':'t-warn')+'">'+(match?'Estimasi teori cocok dengan kenyataan.':'Estimasi teori berbeda dari kenyataan, riwayat ini ikut mengoreksi batas.')+'</p>':'')+
+      '<div class="c-act"><button class="lnk" data-ract="use" data-id="'+esc(h.id)+'">Pakai lagi</button><button class="lnk bad" data-ract="del" data-id="'+esc(h.id)+'">'+(H.confirmId===h.id?'Yakin hapus?':'Hapus')+'</button></div></article>';
+  }).join('');
+}
+function useHistory(id){
+  const h=B.hist.find(x=>x.id===id);if(!h)return;
+  S.items=h.items.map(it=>({nama:it.nama||'',kat:it.kat||'',entries:it.entries.map(e=>({p:String(e.p),l:String(e.l),t:String(e.t),isi:String(e.isi),qty:String(e.qty)}))}));
+  S.P=String(h.P);S.L=String(h.L);S.T=String(h.T);
+  S.box=Object.keys(BOX).find(k=>BOX[k].P===h.P&&BOX[k].L===h.L&&BOX[k].T===h.T)||'kustom';
+  S.rot=!!h.rot;S.contoh=false;
+  setMode('fcl');syncBox();renderItems();window.scrollTo(0,0);
+}
+function askHDelete(id){
+  if(H.confirmId===id){H.confirmId=null;BStore.remove(id).catch(()=>{paintRiwayat();});return;}
+  H.confirmId=id;paintRiwayat();
+  setTimeout(()=>{if(H.confirmId===id){H.confirmId=null;paintRiwayat();}},4000);
+}
+$('#riwayat').addEventListener('click',e=>{
+  const b=e.target.closest('[data-ract]');if(!b)return;
+  if(b.dataset.ract==='use')useHistory(b.dataset.id);
+  else if(b.dataset.ract==='del')askHDelete(b.dataset.id);
+});
+$('#riwayat').addEventListener('input',e=>{
+  if(e.target.id==='rq'){H.q=e.target.value;paintRiwayat();}
+});
+/* ---------- kelola kategori ---------- */
+function katErr(m){const e=$('#kerr');if(e){e.textContent=m||'';e.hidden=!m;}}
+function katNameOk(nama,id){
+  if(!nama)return 'Isi nama kategori.';
+  if(getCats().some(c=>c[0]!==id&&c[1].toLowerCase()===nama.toLowerCase()))return 'Nama kategori sudah ada.';
+  return '';
+}
+function ensureCats(){
+  if(B.cats.length)return Promise.resolve();
+  return DEFAULT_CATS.reduce((p,c,i)=>p.then(()=>BStore.save({id:c[0],isKat:true,nama:c[1],urut:i+1})),Promise.resolve());
+}
+function urutOf(id){
+  const c=B.cats.find(x=>x.id===id);if(c)return c.urut||0;
+  const i=DEFAULT_CATS.findIndex(x=>x[0]===id);return i>=0?i+1:Date.now();
+}
+function addKat(){
+  const el=$('#knew'),nama=el.value.trim(),m=katNameOk(nama,'');
+  if(m){katErr(m);return;}
+  ensureCats().then(()=>BStore.save({isKat:true,nama:nama,urut:Date.now()})).then(()=>{katErr('');const n=$('#knew');if(n){n.value='';}},e=>katErr(bErr(e)));
+}
+function saveKat(id){
+  const el=$('[data-kin="'+id+'"]');if(!el)return;
+  const nama=el.value.trim(),m=katNameOk(nama,id);
+  if(m){katErr(m);return;}
+  ensureCats().then(()=>BStore.save({id:id,isKat:true,nama:nama,urut:urutOf(id)})).then(()=>katErr(''),e=>katErr(bErr(e)));
+}
+function delKat(id){
+  const n=B.rows.filter(b=>b.kat===id).length;
+  if(n){katErr('Kategori ini dipakai '+n+' barang. Pindahkan atau hapus barangnya dulu.');return;}
+  if(getCats().length<=1){katErr('Minimal harus ada satu kategori.');return;}
+  if(B.kconf!==id){B.kconf=id;katErr('');paintKat();setTimeout(()=>{if(B.kconf===id){B.kconf=null;paintKat();}},4000);return;}
+  B.kconf=null;
+  ensureCats().then(()=>BStore.remove(id)).then(()=>katErr(''),e=>katErr(bErr(e)));
+}
+function paintKat(){
+  const p=$('#kpanel');if(!p)return;
+  const btn=$('#kbtn');if(btn)btn.textContent=B.manage?'Tutup kelola kategori':'Kelola kategori';
+  if(!B.manage){p.hidden=true;return;}
+  p.hidden=false;
+  p.innerHTML='<p class="sub">Kategori</p>'+
+    getCats().map(c=>{const n=B.rows.filter(b=>b.kat===c[0]).length;
+      return '<div class="kv"><input data-kin="'+esc(c[0])+'" value="'+esc(c[1])+'" aria-label="Nama kategori" style="flex:1"><span class="hint">'+n+' barang</span>'+
+        '<button type="button" class="lnk" data-bact="kat-save" data-id="'+esc(c[0])+'">Simpan</button>'+
+        '<button type="button" class="lnk bad" data-bact="kat-del" data-id="'+esc(c[0])+'">'+(B.kconf===c[0]?'Yakin hapus?':'Hapus')+'</button></div>';}).join('')+
+    '<div class="toolbar" style="margin-top:10px"><input id="knew" placeholder="Nama kategori baru" autocomplete="off"><button type="button" class="btn primary" data-bact="kat-add">+ Tambah</button></div>'+
+    '<p class="err" id="kerr" hidden style="margin-top:8px"></p>';
+}
+function paintKatFilter(){
+  const s=$('#bkatf');if(!s)return;
+  s.innerHTML=catOptions(B.kat,'Semua kategori')+'<option value="none"'+(B.kat==='none'?' selected':'')+'>Tanpa kategori</option>';
+}
+function showBarangList(){
+  B.view='list';B.draft=null;B.editId=null;
+  $('#b-body').innerHTML=
+    '<div class="toolbar"><input type="search" id="bq" placeholder="Cari nama barang" aria-label="Cari barang"><button class="btn primary" data-bact="new">+ Barang baru</button></div>'+
+    '<label class="field" style="margin-top:12px"><span>Kategori</span><select id="bkatf" aria-label="Filter kategori">'+catOptions(B.kat,'Semua kategori')+'<option value="none"'+(B.kat==='none'?' selected':'')+'>Tanpa kategori</option></select></label>'+
+    '<div><button type="button" class="lnk" id="kbtn" data-bact="kat-toggle">Kelola kategori</button></div>'+
+    '<div id="kpanel" class="item" hidden></div>'+
+    '<p class="hint" id="bsum" style="margin-top:12px"></p>'+
+    '<div id="bnote" class="notice" hidden style="margin-top:12px">Data tersimpan hanya di browser ini. Masuk ke akun Anda agar database tersimpan permanen.</div>'+
+    '<div id="bpurge" class="notice" hidden style="margin-top:12px"><span>Ada barang contoh.</span><button class="lnk bad" data-bact="purge">Hapus contoh</button></div>'+
+    '<div class="list" id="blist" style="margin-top:12px"></div>';
+  $('#bq').value=B.q;paintBarang();paintKat();
+}
+function paintBarang(){
+  const list=$('#blist');if(!list||B.view!=='list')return;
+  $('#bnote').hidden=BStore.mode!=='local';
+  paintKatFilter();
+  if(!B.ready){list.innerHTML='<p class="hint">Memuat database barang…</p>';$('#bsum').textContent='';return;}
+  const q=B.q.trim().toLowerCase();
+  const rows=B.rows.filter(b=>(!q||b.nama.toLowerCase().indexOf(q)>=0)&&(!B.kat||(B.kat==='none'?!catName(b.kat):b.kat===B.kat)));
+  $('#bsum').textContent=B.rows.length+' barang tersimpan'+getCats().map(c=>' · '+c[1]+' '+B.rows.filter(b=>b.kat===c[0]).length).join('');
+  $('#bpurge').hidden=!B.rows.some(b=>b.contoh);
+  if(!rows.length){
+    list.innerHTML='<p class="hint">'+(B.rows.length?'Tidak ada barang yang cocok dengan pencarian.':'Belum ada barang. Tekan Barang baru untuk menyimpan yang pertama.')+'</p>';
+    return;
+  }
+  list.innerHTML=rows.map(b=>'<article class="card">'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap"><span class="badge">'+(catName(b.kat)||'TANPA KATEGORI').toUpperCase()+'</span>'+(b.contoh?'<span class="badge">CONTOH</span>':'')+'</div>'+
+    '<h3>'+esc(b.nama)+'</h3>'+
+    b.entries.map((e,j)=>'<p class="rowout">Isian '+(j+1)+': '+nf.format(e.p)+'×'+nf.format(e.l)+'×'+nf.format(e.t)+' cm · isi '+nf0.format(e.isi)+' pcs/ball · '+nf.format(e.p*e.l*e.t/1e6)+' m³ per ball</p>').join('')+
+    '<div class="c-act"><button class="lnk" data-bact="edit" data-id="'+esc(b.id)+'">Ubah</button><button class="lnk bad" data-bact="del" data-id="'+esc(b.id)+'">'+(B.confirmId===b.id?'Yakin hapus?':'Hapus')+'</button></div></article>').join('');
+}
+const blankBE=()=>({p:'',l:'',t:'',isi:''});
+function openBarangForm(rec){
+  B.editId=rec?rec.id:null;
+  B.draft=rec?{nama:rec.nama,kat:catName(rec.kat)?rec.kat:'',createdAt:rec.createdAt||0,entries:rec.entries.map(e=>({p:String(e.p||''),l:String(e.l||''),t:String(e.t||''),isi:String(e.isi||'')}))}
+             :{nama:'',kat:B.kat&&catName(B.kat)?B.kat:'',createdAt:0,entries:[blankBE()]};
+  B.view='form';renderBarangForm();window.scrollTo(0,0);
+}
+function renderBarangForm(){
+  const d=B.draft;
+  const f=(j,label,key)=>'<label class="field"><span>'+label+'</span><input class="num" inputmode="decimal" data-bf="'+key+'" value="'+esc(d.entries[j][key])+'"></label>';
+  $('#b-body').innerHTML='<div class="stack">'+
+    '<p class="sub">'+(B.editId?'Ubah barang':'Barang baru')+'</p>'+
+    '<label class="field"><span>Kategori</span><select id="bkat">'+catOptions(d.kat,'Pilih kategori')+'</select></label>'+
+    '<label class="field"><span>Nama barang</span><input id="bnama" value="'+esc(d.nama)+'" placeholder="mis. Kemeja polos" autocomplete="off"></label>'+
+    d.entries.map((e,j)=>'<div class="entry" data-bj="'+j+'">'+
+      '<div class="entry-head"><span class="sub">Isian '+(j+1)+'</span>'+(d.entries.length>1?'<button type="button" class="lnk bad" data-bact="del-entry" data-j="'+j+'">Hapus isian</button>':'')+'</div>'+
+      '<div class="grid g3">'+f(j,'Panjang ball cm','p')+f(j,'Lebar ball cm','l')+f(j,'Tinggi ball cm','t')+'</div>'+
+      '<div class="grid g2">'+f(j,'Isi per ball (pcs)','isi')+'</div>'+
+      '<div class="rowout"></div></div>').join('')+
+    (d.entries.length<2?'<div><button type="button" class="btn" data-bact="add-entry">+ Isian ke-2 (ukuran ball lain)</button></div>':'')+
+    '<p class="err" id="berr" hidden></p>'+
+    '<div class="actions"><button class="btn primary" id="bsave" data-bact="save">Simpan</button><button class="btn" data-bact="cancel">Batal</button></div></div>';
+  d.entries.forEach((_,j)=>updateBOut(j));
+}
+function updateBOut(j){
+  const el=$('#b-body .entry[data-bj="'+j+'"] .rowout');if(!el)return;
+  const e=B.draft.entries[j],v=num(e.p)*num(e.l)*num(e.t)/1e6;
+  el.textContent=v?('= '+nf.format(v)+' m³ per ball'):'Isi ukuran ball untuk melihat volume per ball.';
+}
+function saveBarang(){
+  const d=B.draft,err=$('#berr'),btn=$('#bsave');
+  const nama=d.nama.trim();
+  const ents=d.entries.map(e=>({p:num(e.p),l:num(e.l),t:num(e.t),isi:num(e.isi)}));
+  const problems=[];
+  if(!catName(d.kat))problems.push('Pilih kategori.');
+  if(!nama)problems.push('Isi nama barang.');
+  ents.forEach((e,j)=>{if(!(e.p&&e.l&&e.t&&e.isi))problems.push('Lengkapi isian '+(j+1)+' (ukuran ball dan isi per ball) atau hapus isian itu.');});
+  if(nama&&B.rows.some(b=>b.id!==B.editId&&b.kat===d.kat&&b.nama.trim().toLowerCase()===nama.toLowerCase()))problems.push('Nama barang sudah ada di kategori ini.');
+  if(problems.length){err.textContent=problems.join(' ');err.hidden=false;return;}
+  const rec={nama:nama,kat:d.kat,entries:ents,createdAt:d.createdAt||Date.now()};
+  if(B.editId)rec.id=B.editId;
+  err.hidden=true;btn.disabled=true;
+  BStore.save(rec).then(()=>showBarangList(),e=>{err.textContent=bErr(e);err.hidden=false;btn.disabled=false;});
+}
+function askBDelete(id){
+  if(B.confirmId===id){
+    B.confirmId=null;
+    BStore.remove(id).catch(()=>{paintBarang();});
+    return;
+  }
+  B.confirmId=id;paintBarang();
+  setTimeout(()=>{if(B.confirmId===id){B.confirmId=null;paintBarang();}},4000);
+}
+function purgeBContoh(){
+  const ids=B.rows.filter(b=>b.contoh).map(b=>b.id);
+  ids.reduce((p,id)=>p.then(()=>BStore.remove(id)),Promise.resolve()).catch(()=>{});
+}
+const BP=$('#barang');
+BP.addEventListener('click',e=>{
+  const b=e.target.closest('[data-bact]');if(!b)return;
+  const a=b.dataset.bact,id=b.dataset.id,j=+b.dataset.j;
+  if(a==='new')openBarangForm(null);
+  else if(a==='kat-toggle'){B.manage=!B.manage;B.kconf=null;paintKat();}
+  else if(a==='kat-add')addKat();
+  else if(a==='kat-save')saveKat(id);
+  else if(a==='kat-del')delKat(id);
+  else if(a==='edit'){const rec=B.rows.find(x=>x.id===id);if(rec)openBarangForm(rec);}
+  else if(a==='del')askBDelete(id);
+  else if(a==='purge')purgeBContoh();
+  else if(a==='add-entry'){if(B.draft.entries.length<2){B.draft.entries.push(blankBE());renderBarangForm();}}
+  else if(a==='del-entry'){if(B.draft.entries.length>1){B.draft.entries.splice(j,1);renderBarangForm();}}
+  else if(a==='save')saveBarang();
+  else if(a==='cancel')showBarangList();
+});
+BP.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.id==='bq'){B.q=t.value;paintBarang();return;}
+  if(t.id==='bkatf'){B.kat=t.value;paintBarang();return;}
+  if(t.id==='bkat'&&B.draft){B.draft.kat=t.value;return;}
+  if(t.id==='bnama'&&B.draft){B.draft.nama=t.value;return;}
+  if(t.dataset.bf&&B.draft){
+    const j=+t.closest('.entry').dataset.bj;B.draft.entries[j][t.dataset.bf]=t.value;updateBOut(j);
+  }
+});
+$('#items').addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset.pick===undefined)return;
+  const i=+t.dataset.pick,b=B.rows.find(x=>x.id===t.value);
+  if(!b)return;
+  const old=S.items[i];
+  S.items[i]={nama:b.nama,kat:catName(b.kat)?b.kat:'',entries:b.entries.map((x,j)=>({p:String(x.p),l:String(x.l),t:String(x.t),isi:String(x.isi),qty:old.entries[j]?old.entries[j].qty:''}))};
+  S.contoh=false;renderItems();
+});
+
+/* ---------- cadangan data ---------- */
+(function(){
+const msg=t=>{const m=$('#cd-msg');if(m)m.textContent=t;};
+const snapshot=()=>JSON.stringify({app:'buku-kirim',versi:1,dibuat:new Date().toISOString(),data:[].concat(B.cats,B.rows,B.hist)},null,1);
+const fname=()=>'cadangan-buku-kirim-'+new Date().toISOString().slice(0,10)+'.json';
+function unduh(){
+  try{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([snapshot()],{type:'application/json'}));
+    a.download=fname();document.body.appendChild(a);a.click();a.remove();
+    msg('Cadangan diunduh. Kalau tidak ada file yang muncul, pakai Salin sebagai teks.');
+  }catch(e){msg('Unduh gagal. Pakai Salin sebagai teks.');}
+}
+function salin(){
+  const t=$('#cd-text');t.value=snapshot();t.focus();t.select();
+  const ok=()=>msg('Teks cadangan disalin. Tempel ke catatan atau WhatsApp untuk disimpan.');
+  const alt=()=>{try{document.execCommand('copy')?ok():msg('Tekan lama pada kotak teks, lalu pilih Salin.');}catch(e){msg('Tekan lama pada kotak teks, lalu pilih Salin.');}};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t.value).then(ok,alt);else alt();
+}
+function bagikan(){
+  try{
+    const f=new File([snapshot()],fname(),{type:'application/json'});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){navigator.share({files:[f],title:'Cadangan Buku Kirim'}).catch(()=>{});return;}
+  }catch(e){}
+  msg('Perangkat ini tidak bisa membagikan file. Pakai Unduh atau Salin sebagai teks.');
+}
+function impor(txt){
+  let o;try{o=JSON.parse(txt);}catch(e){msg('Isi tidak valid. Pastikan seluruh teks cadangan tertempel.');return;}
+  const arr=Array.isArray(o)?o:(o&&Array.isArray(o.data)?o.data:[]);
+  const ok=arr.filter(r=>r&&typeof r==='object'&&(r.isKat||r.isRiw||Array.isArray(r.entries)));
+  if(!ok.length){msg('Tidak ada barang, kategori, atau riwayat di cadangan ini.');return;}
+  msg('Mengimpor '+ok.length+' data...');
+  ok.reduce((p,r)=>p.then(()=>BStore.save(r)),Promise.resolve())
+    .then(()=>msg(ok.length+' data berhasil diimpor.'),e=>msg(bErr(e)));
+}
+const box=$('#cadangan');
+if(!(navigator.share&&navigator.canShare))$('#cd-share').hidden=true;
+box.addEventListener('click',e=>{
+  const b=e.target.closest('[data-cd]');if(!b)return;
+  const a=b.dataset.cd;
+  if(a==='unduh')unduh();else if(a==='salin')salin();else if(a==='bagikan')bagikan();
+  else if(a==='impor-teks')impor($('#cd-text').value);
+});
+$('#cd-file').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>impor(String(r.result));r.onerror=()=>msg('File tidak bisa dibaca.');
+  r.readAsText(f);e.target.value='';
+});
+if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+})();
+
+/* ---------- mulai ---------- */
+syncBox();setMode(S.mode);renderItems();
+showBarangList();BStore.init();
+})();
+</script>
+
+<script>if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)&&!window.claude){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
+</body></html>
