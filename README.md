@@ -1,0 +1,2 @@
+# kubikasi
+cara hitung kibikasi 
