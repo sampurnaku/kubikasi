@@ -223,10 +223,10 @@ function calcEntry(e){
   let qty=num(e.qty),balls;
   if(jb>0){balls=Math.ceil(jb-1e-9);if(!qty&&isi>0)qty=balls*isi;}
   else balls=(isi>0&&qty>0)?Math.ceil(qty/isi-1e-9):0;
-  const vb=p*l*t/1e6;
+  const vb=rol?Math.PI/4*l*l*p/1e6:p*l*t/1e6;
   const rem=(balls&&isi>0&&qty>0)?qty-(balls-1)*isi:0;
   const mr=num(e.mr),kg=num(e.kg);
-  return {p,l,t,isi,qty,jb,balls,vb,vol:balls*vb,rem,partial:balls>0&&isi>0&&rem>0&&rem<isi-1e-9,rol,mr,kg,mtot:rol?balls*mr:0,kgtot:rol?balls*kg:0,vsil:rol?balls*Math.PI/4*l*l*p/1e6:0};
+  return {p,l,t,isi,qty,jb,balls,vb,vol:balls*vb,rem,partial:balls>0&&isi>0&&rem>0&&rem<isi-1e-9,rol,mr,kg,mtot:rol?balls*mr:0,kgtot:rol?balls*kg:0,vsil:rol?balls*l*l*p/1e6:0};
 }
 function bestFit(cap,item,rot){
   const [p,l,t]=item;
@@ -369,7 +369,7 @@ function updateOuts(){
       if(c.rol){
         if(!(c.p&&c.l))t='Isi diameter dan panjang rol.';
         else if(!c.balls)t=c.isi?'Isi qty yang dikirim, atau isi jumlah rol langsung.':'Isi jumlah rol, atau isi pcs per rol dan qty.';
-        else{t='= '+nf0.format(c.balls)+' rol · kubikasi '+nf.format(c.vol)+' m³ · silinder murni '+nf.format(c.vsil)+' m³';if(c.partial)t+=' · rol terakhir berisi '+nf.format(c.rem)+' pcs';if(c.mtot)t+=' · '+nf0.format(c.mtot)+' m';if(c.kgtot)t+=' · '+nf1.format(c.kgtot)+' kg';}
+        else{t='= '+nf0.format(c.balls)+' rol · kubikasi (silinder) '+nf.format(c.vol)+' m³ · kotak '+nf.format(c.vsil)+' m³';if(c.partial)t+=' · rol terakhir berisi '+nf.format(c.rem)+' pcs';if(c.mtot)t+=' · '+nf0.format(c.mtot)+' m';if(c.kgtot)t+=' · '+nf1.format(c.kgtot)+' kg';}
       }
       else if(!(c.p&&c.l&&c.t))t='Isi ukuran ball.';
       else if(!c.balls)t=c.isi?'Isi qty yang dikirim, atau isi jumlah ball langsung.':'Isi jumlah ball, atau isi pcs per ball dan qty.';
@@ -404,8 +404,8 @@ function renderOut(){
     (tot.pcs>0||!nRol?'<div class="kv"><span class="k">Total qty</span><span class="v">'+nf0.format(tot.pcs)+' pcs</span></div>':'')+
     (tot.mtr?'<div class="kv"><span class="k">Total meter kain</span><span class="v">'+nf0.format(tot.mtr)+' m</span></div>':'')+
     (tot.kg?'<div class="kv"><span class="k">Total berat</span><span class="v">'+nf1.format(tot.kg)+' kg</span></div>':'')+
-    (nRol?'<div class="kv"><span class="k">Volume silinder murni</span><span class="v">'+nf.format(tot.vsil)+' m³</span></div>':'');
-  const rolNote=nRol?'<p class="hint">Rol lose packing: kubikasi dihitung dari kotak Ø × Ø × panjang rol, volume silinder murni hanya pembanding. Muat tidaknya dihitung dengan rol ditidurkan atau ditegakkan (kalau diizinkan) dan tumpukan selang-seling bila lebih padat. Tumpukan tinggi di lapangan butuh pengaman supaya rol tidak menggelinding.</p>':'';
+    (nRol?'<div class="kv"><span class="k">Pembanding: volume kotak Ø×Ø×panjang</span><span class="v">'+nf.format(tot.vsil)+' m³</span></div>':'');
+  const rolNote=nRol?'<p class="hint">Rol lose packing: kubikasi dihitung dari volume silinder (π/4 × Ø² × panjang). Rol bundar paling padat hanya mengisi ±90,7% ruang, jadi volume di atas itu berarti ukuran rol perlu dicek. Volume kotak Ø × Ø × panjang hanya pembanding. Muat tidaknya dihitung dengan rol ditidurkan atau ditegakkan (kalau diizinkan) dan tumpukan selang-seling bila lebih padat. Tumpukan tinggi di lapangan butuh pengaman supaya rol tidak menggelinding.</p>':'';
   if(S.mode==='lcl'){
     const lines=used.map(r=>'<li><span>'+esc(r.label)+'</span><span class="m">'+dimTxt(r)+' · '+nf0.format(r.balls)+' '+uni(r)+(r.mtot?' · '+nf0.format(r.mtot)+' m':'')+(r.kgtot?' · '+nf1.format(r.kgtot)+' kg':'')+(r.isi?' · isi '+nf0.format(r.isi)+' pcs':'')+' · '+nf.format(r.vol)+' m³</span></li>').join('');
     out.innerHTML=
@@ -466,6 +466,7 @@ function renderOut(){
     '<p class="hint">dari '+nf.format(cv)+' m³ ruang dalam kontainer '+esc(nama)+'</p>'+
     '<div class="bars">'+bar('Volume',pct)+'</div>'+
     (pct>100?'<p class="over-note">Muatan melebihi kontainer sebesar '+nf.format(-sisa)+' m³.</p>':'')+
+    (nRol&&pct>90.7&&pct<=100?'<p class="over-note">Volume sudah di atas 90,7% kontainer, batas teori rol bundar. Cek lagi diameter dan panjang rol.</p>':'')+
     est+
     histBlock({P,L,T},pct,sig)+
     '<div>'+kvTotals+
@@ -884,7 +885,7 @@ function paintBarang(){
   list.innerHTML=rows.map(b=>'<article class="card">'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap"><span class="badge">'+(catName(b.kat)||'TANPA KATEGORI').toUpperCase()+'</span>'+(b.contoh?'<span class="badge">CONTOH</span>':'')+'</div>'+
     '<h3>'+esc(b.nama)+'</h3>'+
-    b.entries.map((e,j)=>'<p class="rowout">Isian '+(j+1)+': '+(e.rol?'LOSE PACKING · rol Ø'+nf.format(e.l)+' × '+nf.format(e.p)+' cm · isi '+nf0.format(e.isi)+' pcs/rol'+(e.mr?' · '+nf0.format(e.mr)+' m/rol':'')+(e.kg?' · '+nf1.format(e.kg)+' kg/rol':'')+' · '+nf.format(e.p*e.l*e.l/1e6)+' m³ per rol':nf.format(e.p)+'×'+nf.format(e.l)+'×'+nf.format(e.t)+' cm · isi '+nf0.format(e.isi)+' pcs/ball · '+nf.format(e.p*e.l*e.t/1e6)+' m³ per ball')+'</p>').join('')+
+    b.entries.map((e,j)=>'<p class="rowout">Isian '+(j+1)+': '+(e.rol?'LOSE PACKING · rol Ø'+nf.format(e.l)+' × '+nf.format(e.p)+' cm · isi '+nf0.format(e.isi)+' pcs/rol'+(e.mr?' · '+nf0.format(e.mr)+' m/rol':'')+(e.kg?' · '+nf1.format(e.kg)+' kg/rol':'')+' · '+nf.format(Math.PI/4*e.p*e.l*e.l/1e6)+' m³ per rol (silinder)':nf.format(e.p)+'×'+nf.format(e.l)+'×'+nf.format(e.t)+' cm · isi '+nf0.format(e.isi)+' pcs/ball · '+nf.format(e.p*e.l*e.t/1e6)+' m³ per ball')+'</p>').join('')+
     '<div class="c-act"><button class="lnk" data-bact="edit" data-id="'+esc(b.id)+'">Ubah</button><button class="lnk bad" data-bact="del" data-id="'+esc(b.id)+'">'+(B.confirmId===b.id?'Yakin hapus?':'Hapus')+'</button></div></article>').join('');
 }
 const blankBE=()=>({p:'',l:'',t:'',isi:'',rol:false,mr:'',kg:''});
@@ -918,8 +919,8 @@ function renderBarangForm(){
 }
 function updateBOut(j){
   const el=$('#b-body .entry[data-bj="'+j+'"] .rowout');if(!el)return;
-  const e=B.draft.entries[j],v=num(e.p)*num(e.l)*num(e.rol?e.l:e.t)/1e6;
-  el.textContent=v?('= '+nf.format(v)+(e.rol?' m³ per rol (kotak Ø×Ø×panjang)':' m³ per ball')):(e.rol?'Isi diameter dan panjang rol untuk melihat volume per rol.':'Isi ukuran ball untuk melihat volume per ball.');
+  const e=B.draft.entries[j],v=(e.rol?Math.PI/4:1)*num(e.p)*num(e.l)*num(e.rol?e.l:e.t)/1e6;
+  el.textContent=v?('= '+nf.format(v)+(e.rol?' m³ per rol (silinder)':' m³ per ball')):(e.rol?'Isi diameter dan panjang rol untuk melihat volume per rol.':'Isi ukuran ball untuk melihat volume per ball.');
 }
 function saveBarang(){
   const d=B.draft,err=$('#berr'),btn=$('#bsave');
