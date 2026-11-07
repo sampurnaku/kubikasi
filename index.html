@@ -219,8 +219,8 @@ function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 
 /* ---------- hitungan ---------- */
 function calcEntry(e){
-  const rol=!!e.rol,p=num(e.p),l=num(e.l),t=rol?num(e.l):num(e.t),isi=rol?0:num(e.isi),jb=num(e.jb);
-  let qty=rol?0:num(e.qty),balls;
+  const rol=!!e.rol,p=num(e.p),l=num(e.l),t=rol?num(e.l):num(e.t),isi=num(e.isi),jb=num(e.jb);
+  let qty=num(e.qty),balls;
   if(jb>0){balls=Math.ceil(jb-1e-9);if(!qty&&isi>0)qty=balls*isi;}
   else balls=(isi>0&&qty>0)?Math.ceil(qty/isi-1e-9):0;
   const vb=p*l*t/1e6;
@@ -337,7 +337,9 @@ function entryHtml(e,j,n){
     '<label class="check"><input type="checkbox" data-f="rol"'+(e.rol?' checked':'')+'><span>Lose packing (kain rol, tanpa kemasan)</span></label>'+
     (e.rol?
       '<div class="grid g2">'+f('Diameter rol cm','l')+f('Panjang rol cm (lebar kain)','p')+'</div>'+
-      '<div class="grid g1">'+f('Jumlah rol','jb')+'</div>'+
+      '<div class="grid g1">'+f('Jumlah rol (isi kalau sudah tahu)','jb')+'</div>'+
+      '<div class="grid g2">'+f('Isi per rol (pcs)','isi')+f('Qty dikirim (pcs)','qty')+'</div>'+
+      '<p class="hint">Diameter dan panjang di atas adalah ukuran satu rol yang berisi sekian pcs.</p>'+
       '<div class="grid g2">'+f('Meter per rol (opsional)','mr')+f('Berat per rol kg (opsional)','kg')+'</div>':
       '<div class="grid g3">'+f('Panjang ball cm','p')+f('Lebar ball cm','l')+f('Tinggi ball cm','t')+'</div>'+
       '<div class="grid g1">'+f('Jumlah ball (isi kalau sudah tahu)','jb')+'</div>'+
@@ -366,8 +368,8 @@ function updateOuts(){
       let t;
       if(c.rol){
         if(!(c.p&&c.l))t='Isi diameter dan panjang rol.';
-        else if(!c.balls)t='Isi jumlah rol.';
-        else{t='= '+nf0.format(c.balls)+' rol · kubikasi '+nf.format(c.vol)+' m³ · silinder murni '+nf.format(c.vsil)+' m³';if(c.mtot)t+=' · '+nf0.format(c.mtot)+' m';if(c.kgtot)t+=' · '+nf1.format(c.kgtot)+' kg';}
+        else if(!c.balls)t=c.isi?'Isi qty yang dikirim, atau isi jumlah rol langsung.':'Isi jumlah rol, atau isi pcs per rol dan qty.';
+        else{t='= '+nf0.format(c.balls)+' rol · kubikasi '+nf.format(c.vol)+' m³ · silinder murni '+nf.format(c.vsil)+' m³';if(c.partial)t+=' · rol terakhir berisi '+nf.format(c.rem)+' pcs';if(c.mtot)t+=' · '+nf0.format(c.mtot)+' m';if(c.kgtot)t+=' · '+nf1.format(c.kgtot)+' kg';}
       }
       else if(!(c.p&&c.l&&c.t))t='Isi ukuran ball.';
       else if(!c.balls)t=c.isi?'Isi qty yang dikirim, atau isi jumlah ball langsung.':'Isi jumlah ball, atau isi pcs per ball dan qty.';
@@ -581,7 +583,7 @@ function saveHistory(){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(d.tgl)){H.err='Isi tanggal kirim.';paintHsave();return;}
   const items=[];
   S.items.forEach(it=>{
-    const ents=it.entries.map(e=>{const o={p:num(e.p),l:num(e.l),t:num(e.rol?e.l:e.t),isi:num(e.isi),qty:num(e.qty),jb:num(e.jb)};if(e.rol){o.rol=true;o.isi=0;o.qty=0;if(num(e.mr))o.mr=num(e.mr);if(num(e.kg))o.kg=num(e.kg);}return o;}).filter(e=>e.p&&e.l&&e.t&&(e.jb||(e.isi&&e.qty)));
+    const ents=it.entries.map(e=>{const o={p:num(e.p),l:num(e.l),t:num(e.rol?e.l:e.t),isi:num(e.isi),qty:num(e.qty),jb:num(e.jb)};if(e.rol){o.rol=true;if(num(e.mr))o.mr=num(e.mr);if(num(e.kg))o.kg=num(e.kg);}return o;}).filter(e=>e.p&&e.l&&e.t&&(e.jb||(e.isi&&e.qty)));
     if(ents.length)items.push({nama:String(it.nama||'').trim(),kat:catName(it.kat)?it.kat:'',entries:ents});
   });
   if(!items.length){H.err='Belum ada isian lengkap untuk disimpan.';paintHsave();return;}
@@ -609,7 +611,7 @@ const LEAD={
   lcl:'Barang gabungan. Hasilnya total kubikasi dalam m³ sebagai dasar hitungan. Satu barang bisa punya 2 isian dengan ukuran ball berbeda. Tiap isian berisi ukuran ball, isi pcs per ball, dan qty yang dikirim. Kalau jumlah ball sudah diketahui, isi langsung di kolom jumlah ball dan isi per ball serta qty boleh dikosongkan.'
 };
 LEAD.barang='Simpan ukuran ball dan isi per ball sekali saja. Saat menghitung di tab FCL atau LCL, barangnya tinggal dipilih dan ukurannya terisi otomatis.';
-const LP=' Barang tanpa kemasan (kain rol, lose packing): centang Lose packing di isian, lalu isi diameter, panjang, dan jumlah rol.';LEAD.fcl+=LP;LEAD.lcl+=LP;
+const LP=' Barang tanpa kemasan (kain rol, lose packing): centang Lose packing di isian, lalu isi diameter dan panjang satu rol, isi pcs per rol, dan qty (atau jumlah rol langsung).';LEAD.fcl+=LP;LEAD.lcl+=LP;
 LEAD.riwayat='Catatan kiriman FCL yang sudah terjadi, lengkap dengan hasil di lapangan. Dipakai sebagai pembanding hitungan dan referensi untuk kiriman gabungan beberapa barang. Simpan dari tab FCL lewat tombol Simpan ke riwayat.';
 function setMode(m){
   const isB=m==='barang',isR=m==='riwayat';
@@ -650,7 +652,7 @@ $('#items').addEventListener('input',e=>{
   if(t.dataset.f==='nama')S.items[i].nama=t.value;
   else{
     const j=+t.closest('.entry').dataset.j,en=S.items[i].entries[j],k=t.dataset.f;
-    if(k==='rol'){en.rol=t.checked;if(en.rol){en.t=en.l;en.isi='';en.qty='';}S.contoh=false;renderItems();return;}
+    if(k==='rol'){en.rol=t.checked;if(en.rol)en.t=en.l;S.contoh=false;renderItems();return;}
     en[k]=t.value;if(en.rol&&k==='l')en.t=t.value;
   }
   S.contoh=false;update();
@@ -882,7 +884,7 @@ function paintBarang(){
   list.innerHTML=rows.map(b=>'<article class="card">'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap"><span class="badge">'+(catName(b.kat)||'TANPA KATEGORI').toUpperCase()+'</span>'+(b.contoh?'<span class="badge">CONTOH</span>':'')+'</div>'+
     '<h3>'+esc(b.nama)+'</h3>'+
-    b.entries.map((e,j)=>'<p class="rowout">Isian '+(j+1)+': '+(e.rol?'LOSE PACKING · rol Ø'+nf.format(e.l)+' × '+nf.format(e.p)+' cm'+(e.mr?' · '+nf0.format(e.mr)+' m/rol':'')+(e.kg?' · '+nf1.format(e.kg)+' kg/rol':'')+' · '+nf.format(e.p*e.l*e.l/1e6)+' m³ per rol':nf.format(e.p)+'×'+nf.format(e.l)+'×'+nf.format(e.t)+' cm · isi '+nf0.format(e.isi)+' pcs/ball · '+nf.format(e.p*e.l*e.t/1e6)+' m³ per ball')+'</p>').join('')+
+    b.entries.map((e,j)=>'<p class="rowout">Isian '+(j+1)+': '+(e.rol?'LOSE PACKING · rol Ø'+nf.format(e.l)+' × '+nf.format(e.p)+' cm · isi '+nf0.format(e.isi)+' pcs/rol'+(e.mr?' · '+nf0.format(e.mr)+' m/rol':'')+(e.kg?' · '+nf1.format(e.kg)+' kg/rol':'')+' · '+nf.format(e.p*e.l*e.l/1e6)+' m³ per rol':nf.format(e.p)+'×'+nf.format(e.l)+'×'+nf.format(e.t)+' cm · isi '+nf0.format(e.isi)+' pcs/ball · '+nf.format(e.p*e.l*e.t/1e6)+' m³ per ball')+'</p>').join('')+
     '<div class="c-act"><button class="lnk" data-bact="edit" data-id="'+esc(b.id)+'">Ubah</button><button class="lnk bad" data-bact="del" data-id="'+esc(b.id)+'">'+(B.confirmId===b.id?'Yakin hapus?':'Hapus')+'</button></div></article>').join('');
 }
 const blankBE=()=>({p:'',l:'',t:'',isi:'',rol:false,mr:'',kg:''});
@@ -904,6 +906,7 @@ function renderBarangForm(){
       '<label class="check"><input type="checkbox" data-bf="rol"'+(e.rol?' checked':'')+'><span>Lose packing (kain rol, tanpa kemasan)</span></label>'+
       (e.rol?
         '<div class="grid g2">'+f(j,'Diameter rol cm','l')+f(j,'Panjang rol cm (lebar kain)','p')+'</div>'+
+        '<div class="grid g2">'+f(j,'Isi per rol (pcs)','isi')+'</div>'+
         '<div class="grid g2">'+f(j,'Meter per rol (opsional)','mr')+f(j,'Berat per rol kg (opsional)','kg')+'</div>':
         '<div class="grid g3">'+f(j,'Panjang ball cm','p')+f(j,'Lebar ball cm','l')+f(j,'Tinggi ball cm','t')+'</div>'+
         '<div class="grid g2">'+f(j,'Isi per ball (pcs)','isi')+'</div>')+
@@ -921,11 +924,11 @@ function updateBOut(j){
 function saveBarang(){
   const d=B.draft,err=$('#berr'),btn=$('#bsave');
   const nama=d.nama.trim();
-  const ents=d.entries.map(e=>{if(e.rol){const o={rol:true,p:num(e.p),l:num(e.l),t:num(e.l),isi:0};if(num(e.mr))o.mr=num(e.mr);if(num(e.kg))o.kg=num(e.kg);return o;}return {p:num(e.p),l:num(e.l),t:num(e.t),isi:num(e.isi)};});
+  const ents=d.entries.map(e=>{if(e.rol){const o={rol:true,p:num(e.p),l:num(e.l),t:num(e.l),isi:num(e.isi)};if(num(e.mr))o.mr=num(e.mr);if(num(e.kg))o.kg=num(e.kg);return o;}return {p:num(e.p),l:num(e.l),t:num(e.t),isi:num(e.isi)};});
   const problems=[];
   if(!catName(d.kat))problems.push('Pilih kategori.');
   if(!nama)problems.push('Isi nama barang.');
-  ents.forEach((e,j)=>{if(!(e.p&&e.l&&e.t&&(e.rol||e.isi)))problems.push('Lengkapi isian '+(j+1)+' ('+(e.rol?'diameter dan panjang rol':'ukuran ball dan isi per ball')+') atau hapus isian itu.');});
+  ents.forEach((e,j)=>{if(!(e.p&&e.l&&e.t&&e.isi))problems.push('Lengkapi isian '+(j+1)+' ('+(e.rol?'diameter, panjang, dan isi per rol':'ukuran ball dan isi per ball')+') atau hapus isian itu.');});
   if(nama&&B.rows.some(b=>b.id!==B.editId&&b.kat===d.kat&&b.nama.trim().toLowerCase()===nama.toLowerCase()))problems.push('Nama barang sudah ada di kategori ini.');
   if(problems.length){err.textContent=problems.join(' ');err.hidden=false;return;}
   const rec={nama:nama,kat:d.kat,entries:ents,createdAt:d.createdAt||Date.now()};
