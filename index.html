@@ -607,7 +607,6 @@ $('#hsave').addEventListener('input',e=>{
   H.draft[t.dataset.hf]=t.value;
 });
 
-/* ---------- penyusun muatan (gambaran per tier) ---------- */
 const PEPS=1e-6;
 const PORD=[[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
 function mkRng(seed){let s=seed>>>0;return function(){s=(s*1664525+1013904223)>>>0;return s/4294967296;};}
@@ -660,7 +659,7 @@ function planRolls(rolG,cap){
   });
   return {segs:segs,usedX:x};
 }
-function planBallsOnce(balG,X0,cap,rot,order,rng,noise){
+function planBallsOnce(balG,X0,cap,rot,order,rng,noise,pen){
   const spaces=[{o:[X0,0,0],s:[cap.P-X0,cap.L,cap.T]}];
   const blocks=[],rem=balG.map(g=>g.m);
   let minDim=Infinity;
@@ -682,6 +681,7 @@ function planBallsOnce(balG,X0,cap,rot,order,rng,noise){
             const bv=d[0]*o.a*d[1]*o.b*d[2]*o.c;
             let cost=(m-mm)*1e9+(mm===m?sv:0)+bv*0.5;
             if(C!==2)cost*=1.03;
+            if(pen&&o.a<Math.max(g.p,g.l,g.t)-PEPS)cost*=pen;
             if(noise)cost*=1+noise*rng();
             if(!best||cost<best.cost)best={cost:cost,si:si,o:o,od:od,d:d,mm:mm};
           });
@@ -702,10 +702,11 @@ function planBallsOnce(balG,X0,cap,rot,order,rng,noise){
   });
   let placed=0,maxX=X0,pv=0;
   blocks.forEach(b=>{placed+=b.n;maxX=Math.max(maxX,b.o[0]+b.d[0]*b.ori.a);const g=balG[b.gi];pv+=b.n*g.p*g.l*g.t;});
-  return {blocks:blocks,placed:placed,maxX:maxX,pv:pv};
+  const xs={};
+  blocks.forEach(b=>{for(let i=0;i<b.d[0];i++)xs[Math.round(b.o[0]+i*b.ori.a)]=1;});
+  return {blocks:blocks,placed:placed,maxX:maxX,pv:pv,nt:Object.keys(xs).length};
 }
-function planBalls(balG,X0,cap,rot,ms){
-  if(!balG.length)return {blocks:[],placed:0,maxX:X0,pv:0};
+function planBallsPass(balG,X0,cap,rot,ms,pen){
   const idx=balG.map((_,i)=>i);
   const vol=g=>g.p*g.l*g.t;
   const strat=[
@@ -715,7 +716,6 @@ function planBalls(balG,X0,cap,rot,ms){
     idx.slice().sort((a,b)=>vol(balG[a])*balG[a].m-vol(balG[b])*balG[b].m)
   ];
   const rng=mkRng(12345);
-  const total=balG.reduce((a,g)=>a+g.m,0);
   let best=null;const t0=Date.now();let it=0;
   const maxIt=idx.length===1?60:900;
   while(it<maxIt&&(it<strat.length||Date.now()-t0<ms)){
@@ -723,49 +723,50 @@ function planBalls(balG,X0,cap,rot,ms){
     if(it<strat.length)order=strat[it];
     else if(it%2===0){order=strat[Math.floor(rng()*strat.length)].slice();if(order.length>1){const a=Math.floor(rng()*order.length),b=Math.floor(rng()*order.length);const t=order[a];order[a]=order[b];order[b]=t;}}
     else{order=idx.slice();for(let q=order.length-1;q>0;q--){const r=Math.floor(rng()*(q+1)),t=order[q];order[q]=order[r];order[r]=t;}}
-    const res=planBallsOnce(balG,X0,cap,rot,order,rng,it<strat.length?0:0.25);
-    if(!best||res.placed>best.placed||(res.placed===best.placed&&res.maxX<best.maxX-PEPS))best=res;
+    const res=planBallsOnce(balG,X0,cap,rot,order,rng,it<strat.length?0:0.25,pen);
+    if(!best||res.placed>best.placed||(res.placed===best.placed&&(res.nt<best.nt||(res.nt===best.nt&&res.maxX<best.maxX-PEPS))))best=res;
     it++;
-    if(best.placed===total&&it>=strat.length+40&&idx.length===1)break;
   }
   best.iters=it;
   return best;
 }
-/* Gabungkan: rol di depan, blok ball sesudahnya. Hasil: daftar kotak per tier untuk digambar. */
+/* Utamakan susunan seperti di lapangan (sisi terpanjang searah panjang kontainer). Pakai susunan bebas hanya kalau yang tadi menampung jauh lebih sedikit. */
+function planBalls(balG,X0,cap,rot,ms){
+  if(!balG.length)return {blocks:[],placed:0,maxX:X0,pv:0};
+  const pref=planBallsPass(balG,X0,cap,rot,ms*0.55,6);
+  const free=planBallsPass(balG,X0,cap,rot,ms*0.45,0);
+  const total=balG.reduce((a,g)=>a+g.m,0);
+  const pick=(pref.placed>=free.placed-Math.max(2,Math.floor(total*0.01)))?pref:free;
+  pick.free=free.placed;pick.pref=pref.placed;pick.usedPref=pick===pref;
+  return pick;
+}
+/* Gabungkan: rol di depan, blok ball sesudahnya. Tier = potongan melintang (satu "dinding" tampak dari pintu), tier 1 paling depan, tier terakhir di sisi pintu. */
 function buildPlan(used,cap,rot,ms){
   const groups=planGroups(used,rot);
   const rolG=groups.filter(g=>g.rol),balG=groups.filter(g=>!g.rol);
   const rs=planRolls(rolG,cap);
   const bp=planBalls(balG,rs.usedX,cap,rot,ms||350);
-  const tiers={};const addT=(k,o)=>{(tiers[k]||(tiers[k]=[])).push(o);};
-  /* rol */
+  const entries=[];
   rs.segs.forEach(sg=>{
-    const pts=sg.lay.pts,N=sg.lay.n;
     sg.partCount={};
+    const N=sg.lay.n,parts=sg.g.parts;
     let pi=0,usedP=0;
-    const parts=sg.g.parts;
     for(let q=0;q<sg.placed;q++){
       while(pi<parts.length-1&&usedP>=parts[pi].n){pi++;usedP=0;}
-      usedP++;
-      const col=Math.floor(q/N),pt=pts[q%N];
-      addT(pt.tier,{x:sg.x0+col*sg.len,y:pt.h-sg.d/2,w:sg.len,h:sg.d,part:parts[pi].id,rol:true});
-      sg.partCount[parts[pi].id]=(sg.partCount[parts[pi].id]||0)+1;
+      usedP++;sg.partCount[parts[pi].id]=(sg.partCount[parts[pi].id]||0)+1;
     }
     sg.remLast=sg.placed>0?sg.placed-(sg.cols-1)*N:0;
+    if(!sg.cols)return;
+    const partial=sg.remLast<N,fullCols=partial?sg.cols-1:sg.cols;
+    const pid=+Object.keys(sg.partCount)[0];
+    if(fullCols>0)entries.push({kind:'rol',x:sg.x0,len:sg.len,count:fullCols,seg:sg,n:N,pts:sg.lay.pts,part:pid,sum:fullCols*N});
+    if(partial)entries.push({kind:'rol',x:sg.x0+fullCols*sg.len,len:sg.len,count:1,seg:sg,n:sg.remLast,pts:sg.lay.pts.slice(0,sg.remLast),part:pid,sum:sg.remLast,partial:true});
   });
-  /* ball */
-  const ptr=balG.map(()=>({pi:0,u:0}));
-  const done=[];
+  const ptr=balG.map(()=>({pi:0,u:0})),recs=[];
   bp.blocks.forEach((b,bi)=>{
     const g=balG[b.gi],o=b.ori,A=b.od[0],B=b.od[1],dA=b.d[A],dB=b.d[B];
-    const bx0=b.o[0],by0=b.o[1],bz0=b.o[2],sx=b.d[0]*o.a,sy=b.d[1]*o.b,sz=b.d[2]*o.c;
-    let base=0;
-    done.forEach(e=>{
-      const ox=Math.min(bx0+sx,e.x1)-Math.max(bx0,e.x0),oy=Math.min(by0+sy,e.y1)-Math.max(by0,e.y0);
-      if(ox>PEPS&&oy>PEPS&&e.z1<=bz0+PEPS)base=Math.max(base,e.base+e.levels);
-    });
-    let lv=0;const cnt={};
-    const p=ptr[b.gi];
+    const bx0=b.o[0],by0=b.o[1],bz0=b.o[2];
+    const cnt={},p=ptr[b.gi];
     for(let i=0;i<b.n;i++){
       const cell=[0,0,0];
       cell[A]=i%dA;cell[B]=Math.floor(i/dA)%dB;cell[b.od[2]]=Math.floor(i/(dA*dB));
@@ -773,16 +774,22 @@ function buildPlan(used,cap,rot,ms){
       p.u++;
       const pid=g.parts[p.pi].id;
       cnt[pid]=(cnt[pid]||0)+1;
-      lv=Math.max(lv,cell[2]+1);
-      addT(base+cell[2]+1,{x:bx0+cell[0]*o.a,y:by0+cell[1]*o.b,w:o.a,h:o.b,part:pid,z:bz0+cell[2]*o.c});
+      recs.push({x:bx0+cell[0]*o.a,y:by0+cell[1]*o.b,z:bz0+cell[2]*o.c,a:o.a,b:o.b,c:o.c,part:pid});
     }
-    b.base=base;b.levels=lv;b.cnt=cnt;b.sx=sx;b.sy=sy;b.sz=sz;b.bi=bi;
-    done.push({x0:bx0,x1:bx0+sx,y0:by0,y1:by0+sy,z1:bz0+sz,base:base,levels:lv});
+    b.cnt=cnt;b.sx=b.d[0]*o.a;b.sy=b.d[1]*o.b;b.sz=b.d[2]*o.c;b.bi=bi;
   });
+  const byX={};
+  recs.forEach(r=>{const k=Math.round(r.x);(byX[k]||(byX[k]=[])).push(r);});
+  Object.keys(byX).forEach(k=>{
+    const rr=byX[k];
+    entries.push({kind:'ball',x:+k,len:rr.reduce((m,r)=>Math.max(m,r.a),0),count:1,balls:rr,sum:rr.length});
+  });
+  entries.sort((p,q)=>p.x-q.x||(p.kind==='rol'?-1:1));
+  let t=1;
+  entries.forEach(e=>{e.t0=t;e.t1=t+e.count-1;t+=e.count;});
   const placedBall=bp.placed,placedRol=rs.segs.reduce((a,s)=>a+s.placed,0);
   const totalBall=balG.reduce((a,g)=>a+g.m,0),totalRol=rolG.reduce((a,g)=>a+g.m,0);
-  const tierKeys=Object.keys(tiers).map(Number).sort((a,b)=>a-b);
-  return {groups:groups,balG:balG,rolG:rolG,segs:rs.segs,blocks:bp.blocks,tiers:tiers,tierKeys:tierKeys,
+  return {groups:groups,balG:balG,rolG:rolG,segs:rs.segs,blocks:bp.blocks,entries:entries,nTier:t-1,
     placed:placedBall+placedRol,total:totalBall+totalRol,placedBall:placedBall,totalBall:totalBall,placedRol:placedRol,totalRol:totalRol,
     usedX:Math.max(rs.usedX,bp.maxX),cap:cap,iters:bp.iters};
 }
@@ -812,105 +819,79 @@ function paintPlan(){
     '<p class="hint">Lihat contoh cara menata ball lapis demi lapis (tier) dari lantai ke atas.</p>'+
     '<div><button type="button" class="btn primary" data-plan="go">Buat gambaran susunan muat</button></div>';
 }
-function planDesc(b,g){
-  const o=b.ori;
-  return 'memanjang '+nf.format(o.a)+' · melintang '+nf.format(o.b)+' · tinggi '+nf.format(o.c)+' cm';
-}
 function planSideSvg(res){
-  const cap=res.cap,pad=10,W=cap.P+pad*2,H=cap.T+pad*2;
+  const cap=res.cap,pad=10,W=cap.P+pad*2,H=cap.T+pad*2+36;
   let s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img" aria-label="Tampak samping kontainer">';
-  s+='<rect x="'+pad+'" y="'+pad+'" width="'+cap.P+'" height="'+cap.T+'" fill="none" stroke="currentColor" stroke-width="2"/>';
+  s+='<rect x="'+pad+'" y="'+(pad+36)+'" width="'+cap.P+'" height="'+cap.T+'" fill="none" stroke="currentColor" stroke-width="2"/>';
+  res.blocks.forEach(b=>{
+    const pid=+Object.keys(b.cnt)[0],x=pad+b.o[0],y=pad+36+cap.T-b.o[2]-b.sz;
+    s+='<rect x="'+x+'" y="'+y+'" width="'+b.sx+'" height="'+b.sz+'" fill="'+pCol(pid)+'" fill-opacity=".85" stroke="rgba(0,0,0,.5)" stroke-width="1"/>';
+  });
   res.segs.forEach(sg=>{
     if(!sg.cols)return;
-    const pid=Object.keys(sg.partCount||{})[0]||0,w=sg.cols*sg.len;
-    s+='<rect x="'+(pad+sg.x0)+'" y="'+pad+'" width="'+w+'" height="'+cap.T+'" fill="'+pCol(+pid)+'" fill-opacity=".85" stroke="rgba(0,0,0,.5)" stroke-width="1"/>';
-    s+='<text x="'+(pad+sg.x0+w/2)+'" y="'+(pad+cap.T/2)+'" text-anchor="middle" dominant-baseline="middle" font-size="34" font-weight="700" fill="#1b1b1b">'+pLet(+pid)+'</text>';
+    const pid=+Object.keys(sg.partCount||{})[0]||0,w=sg.cols*sg.len;
+    s+='<rect x="'+(pad+sg.x0)+'" y="'+(pad+36)+'" width="'+w+'" height="'+cap.T+'" fill="'+pCol(pid)+'" fill-opacity=".85" stroke="rgba(0,0,0,.5)" stroke-width="1"/>';
   });
-  res.blocks.forEach(b=>{
-    const pid=+Object.keys(b.cnt)[0],x=pad+b.o[0],y=pad+cap.T-b.o[2]-b.sz;
-    s+='<rect x="'+x+'" y="'+y+'" width="'+b.sx+'" height="'+b.sz+'" fill="'+pCol(pid)+'" fill-opacity=".85" stroke="rgba(0,0,0,.5)" stroke-width="1"/>';
-    if(b.sx>40&&b.sz>30)s+='<text x="'+(x+b.sx/2)+'" y="'+(y+b.sz/2)+'" text-anchor="middle" dominant-baseline="middle" font-size="'+Math.min(34,b.sz*.6)+'" font-weight="700" fill="#1b1b1b">'+pLet(pid)+'</text>';
-  });
-  s+='</svg>';
-  return s;
-}
-function planTopSvg(res,k){
-  const cap=res.cap,pad=8,W=cap.P+pad*2,H=cap.L+pad*2;
-  let s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" role="img" aria-label="Tampak atas tier '+k+'">';
-  s+='<rect x="'+pad+'" y="'+pad+'" width="'+cap.P+'" height="'+cap.L+'" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="6 4"/>';
-  (res.tiers[k]||[]).forEach(r=>{
-    s+='<rect x="'+(pad+r.x)+'" y="'+(pad+r.y)+'" width="'+r.w+'" height="'+r.h+'" fill="'+pCol(r.part)+'" stroke="rgba(0,0,0,.45)" stroke-width=".7"/>';
+  res.entries.forEach(e=>{
+    const x0=pad+e.x,w=e.len*e.count;
+    s+='<line x1="'+x0+'" y1="'+(pad+30)+'" x2="'+x0+'" y2="'+(pad+36+cap.T)+'" stroke="currentColor" stroke-width="1" stroke-dasharray="4 4" opacity=".55"/>';
+    if(w>=55)s+='<text x="'+(x0+w/2)+'" y="'+(pad+24)+'" text-anchor="middle" font-size="26" font-weight="700" fill="currentColor">'+(e.t0===e.t1?e.t0:e.t0+'-'+e.t1)+'</text>';
   });
   s+='</svg>';
   return s;
 }
-function planRollSvg(sg,cap){
-  const pad=6,W=cap.L+pad*2,H=cap.T+pad*2,d=sg.d,lay=sg.lay;
-  let s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:420px;height:auto;display:block" role="img" aria-label="Tampak depan susunan rol">';
+function planWallSvg(e,cap){
+  const pad=8,W=cap.L+pad*2,H=cap.T+pad*2;
+  let s='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:440px;height:auto;display:block;margin:0 auto" role="img" aria-label="Tier '+e.t0+' tampak dari pintu">';
   s+='<rect x="'+pad+'" y="'+pad+'" width="'+cap.L+'" height="'+cap.T+'" fill="none" stroke="currentColor" stroke-width="2"/>';
-  lay.pts.forEach(p=>{
-    s+='<circle cx="'+(pad+p.h)+'" cy="'+(pad+cap.T-p.v)+'" r="'+(d/2*0.94)+'" fill="'+pCol(0)+'" stroke="rgba(0,0,0,.45)" stroke-width=".5"/>';
-  });
-  const seen={};
-  lay.pts.forEach(p=>{
-    if(seen[p.tier])return;seen[p.tier]=1;
-    if(p.tier===1||p.tier%5===0||p.tier===lay.tiers)s+='<text x="'+(pad+cap.L+2)+'" y="'+(pad+cap.T-p.v)+'" font-size="9" dominant-baseline="middle" fill="currentColor">'+p.tier+'</text>';
-  });
+  if(e.kind==='ball'){
+    e.balls.forEach(r=>{
+      const x=pad+r.y,y=pad+cap.T-r.z-r.c;
+      s+='<rect x="'+x+'" y="'+y+'" width="'+r.b+'" height="'+r.c+'" fill="'+pCol(r.part)+'" stroke="rgba(0,0,0,.55)" stroke-width="1"/>';
+      if(Math.min(r.b,r.c)>=14)s+='<text x="'+(x+r.b/2)+'" y="'+(y+r.c/2)+'" text-anchor="middle" dominant-baseline="middle" font-size="'+Math.min(r.b,r.c)*.5+'" font-weight="700" fill="#1b1b1b">'+pLet(r.part)+'</text>';
+    });
+  }else{
+    const d=e.seg.d;
+    e.pts.forEach(p=>{
+      s+='<circle cx="'+(pad+p.h)+'" cy="'+(pad+cap.T-p.v)+'" r="'+(d/2*0.94)+'" fill="'+pCol(e.part)+'" stroke="rgba(0,0,0,.45)" stroke-width=".5"/>';
+    });
+  }
   s+='</svg>';
   return s;
 }
 function renderPlan(res){
   const el=$('#plan');if(!el)return;
   const cap=res.cap,short=res.total-res.placed;
-  const partName={};res.groups.forEach(g=>g.parts.forEach(p=>{partName[p.id]=p;}));
   const leftX=Math.max(0,cap.P-res.usedX);
   let h='<p class="sub">Gambaran susunan muat</p>';
   h+='<div class="kv total"><span class="k">Masuk dalam rencana</span><span class="v t-'+(short>0?'bad':'good')+'">'+nf0.format(res.placed)+' dari '+nf0.format(res.total)+'</span></div>';
-  h+='<p class="hint">Panjang terpakai ±'+nf0.format(res.usedX)+' cm dari '+nf0.format(cap.P)+' cm'+(leftX>0?' (sisa ±'+nf0.format(leftX)+' cm)':'')+'. Dinding depan di kiri gambar, pintu di kanan.</p>';
-  if(short>0)h+='<p class="over-note">Dalam rencana ini '+nf0.format(short)+' '+(res.totalRol&&!res.totalBall?'rol':'ball')+' belum dapat tempat.</p><p class="hint">Ini satu contoh susunan dari hitungan komputer. Penataan lebih rapat atau ball yang sedikit menyesuaikan di lapangan bisa memuat sedikit lebih banyak, tapi jangan dijadikan patokan.</p>';
-  /* legenda */
+  h+='<p class="hint">'+nf0.format(res.nTier)+' tier. Panjang terpakai ±'+nf0.format(res.usedX)+' cm dari '+nf0.format(cap.P)+' cm'+(leftX>0?' (sisa ±'+nf0.format(leftX)+' cm)':'')+'.</p>';
+  if(short>0)h+='<p class="over-note">Dalam rencana ini '+nf0.format(short)+' '+(res.totalRol&&!res.totalBall?'rol':'ball')+' belum dapat tempat.</p><p class="hint">Ini satu contoh susunan dari hitungan komputer. Penataan lebih rapat di lapangan bisa memuat sedikit lebih banyak, tapi jangan dijadikan patokan.</p>';
   h+='<p class="sub" style="margin-top:6px">Isi per kelompok</p><ul class="lines">';
   res.groups.forEach(g=>g.parts.forEach(p=>{
     h+='<li><span><b style="display:inline-block;min-width:22px;padding:0 6px;border-radius:4px;background:'+pCol(p.id)+';color:#1b1b1b">'+pLet(p.id)+'</b> '+esc(p.label)+'</span><span class="m">'+nf0.format(p.n)+' '+(g.rol?'rol':'ball')+' · '+(g.rol?'Ø'+nf.format(g.l)+' × '+nf.format(g.p):nf.format(g.p)+'×'+nf.format(g.l)+'×'+nf.format(g.t))+' cm</span></li>';
   }));
   h+='</ul>';
   h+='<p class="sub" style="margin-top:6px">Tampak samping</p>'+planSideSvg(res)+
-     '<p class="hint">Tiap warna adalah satu kelompok barang. Huruf sesuai daftar di atas.</p>';
-  /* rol */
-  res.segs.forEach(sg=>{
-    const pid=Object.keys(sg.partCount||{})[0]||0;
-    h+='<p class="sub" style="margin-top:10px">Susunan rol '+pLet(+pid)+' (tampak depan)</p>';
-    if(!sg.cols){h+='<p class="over-note">Rol ini tidak muat di dalam kontainer.</p>';return;}
-    const perT={};sg.lay.pts.forEach(p=>{perT[p.tier]=(perT[p.tier]||0)+1;});
-    const tl=Object.keys(perT).map(Number).sort((a,b)=>a-b).map(t=>'Tier '+t+': '+perT[t]).join(' · ');
-    h+=planRollSvg(sg,cap)+
-      '<p class="hint">Rol berbaring searah panjang kontainer, bersandar rapi dari dinding depan. Satu kolom = satu lapisan penampang berisi '+nf0.format(sg.lay.n)+' rol'+(sg.lay.hex?' (tumpukan selang-seling)':' (tumpukan lurus)')+'. Dipasang '+nf0.format(sg.cols)+' kolom ('+nf0.format(sg.len)+' cm per kolom) = '+nf0.format(sg.placed)+' rol.'+
-      (sg.remLast&&sg.remLast<sg.lay.n?' Kolom terakhir hanya terisi '+nf0.format(sg.remLast)+' rol, isi dari tier paling bawah.':'')+'</p>'+
-      '<p class="rowout">Per kolom, dari lantai ke atas: '+tl+'</p>'+
-      '<p class="hint">Tumpukan tinggi perlu pengaman supaya rol tidak menggelinding.</p>';
+     '<p class="hint">Dinding depan kontainer di kiri, pintu di kanan. Angka di atas adalah nomor tier. Tier 1 paling depan, tier terakhir paling dekat pintu.</p>';
+  h+='<p class="sub" style="margin-top:14px">Per tier (tampak dari pintu)</p>'+
+     '<p class="hint">Tiap gambar adalah satu dinding ball seperti terlihat saat pintu dibuka. Kiri gambar = sisi kiri kontainer. Muat dari tier 1 sampai tier terakhir.</p>';
+  res.entries.forEach(e=>{
+    const title=e.t0===e.t1?'Tier '+e.t0:'Tier '+e.t0+' sampai '+e.t1;
+    h+='<div class="card" style="margin-top:10px"><h3>'+title+'</h3>'+planWallSvg(e,cap);
+    if(e.kind==='ball'){
+      const grp={};
+      e.balls.forEach(r=>{const k=r.part+'|'+r.a+'|'+r.b+'|'+r.c;(grp[k]||(grp[k]={part:r.part,a:r.a,b:r.b,c:r.c,n:0})).n++;});
+      h+='<p class="rowout">Mulai '+nf0.format(e.x)+' cm dari dinding depan · tebal ±'+nf0.format(e.len)+' cm · total '+nf0.format(e.sum)+' ball</p>';
+      Object.keys(grp).map(k=>grp[k]).forEach(g=>{
+        h+='<p class="rowout"><b style="display:inline-block;min-width:20px;padding:0 5px;border-radius:4px;background:'+pCol(g.part)+';color:#1b1b1b">'+pLet(g.part)+'</b> '+nf0.format(g.n)+' ball · searah panjang kontainer '+nf.format(g.a)+' cm, melintang '+nf.format(g.b)+' cm, tinggi '+nf.format(g.c)+' cm</p>';
+      });
+    }else{
+      h+='<p class="rowout"><b style="display:inline-block;min-width:20px;padding:0 5px;border-radius:4px;background:'+pCol(e.part)+';color:#1b1b1b">'+pLet(e.part)+'</b> '+nf0.format(e.n)+' rol per tier'+(e.partial?' (tier terakhir sebagian, isi dari bawah)':(e.seg.lay.hex?' · tumpukan selang-seling':' · tumpukan lurus'))+' · rol berbaring searah panjang kontainer, tebal tier '+nf.format(e.len)+' cm'+(e.count>1?' · tiap tier sama':'')+'</p>';
+    }
+    h+='</div>';
   });
-  /* ball: blok */
-  if(res.blocks.length){
-    h+='<p class="sub" style="margin-top:14px">Urutan blok (muat dari dinding depan)</p><ul class="lines">';
-    res.blocks.slice().sort((a,b)=>a.o[0]-b.o[0]||a.o[2]-b.o[2]).forEach((b,i)=>{
-      const pids=Object.keys(b.cnt).map(Number),g=res.balG[b.gi];
-      h+='<li><span>'+pids.map(id=>'<b style="display:inline-block;min-width:22px;padding:0 6px;border-radius:4px;background:'+pCol(id)+';color:#1b1b1b">'+pLet(id)+'</b> '+nf0.format(b.cnt[id])).join(' &nbsp; ')+' ball</span>'+
-        '<span class="m">Mulai '+nf0.format(b.o[0])+' cm dari dinding depan'+(b.o[2]>0?', di atas tinggi '+nf0.format(b.o[2])+' cm':'')+' · posisi melintang '+nf0.format(b.o[1])+' cm dari sisi kiri</span>'+
-        '<span class="m">Letak ball: '+planDesc(b,g)+'</span>'+
-        '<span class="m">Susunan: '+nf0.format(b.d[0])+' baris memanjang × '+nf0.format(b.d[1])+' berjajar melintang × '+nf0.format(b.d[2])+' tumpuk'+(b.n<b.d[0]*b.d[1]*b.d[2]?' (bagian terakhir tidak penuh)':'')+'</span></li>';
-    });
-    h+='</ul>';
-    h+='<p class="sub" style="margin-top:14px">Per tier (tampak atas)</p>'+
-       '<p class="hint">Tier 1 = lapisan paling bawah di lantai, tier berikutnya ditumpuk di atasnya. Tiap gambar menunjukkan ball yang ada di lapisan itu saja. Tinggi tiap tier mengikuti tinggi ball di bagian itu.</p>';
-    res.tierKeys.forEach(k=>{
-      const rs=(res.tiers[k]||[]).filter(r=>!r.rol);
-      if(!rs.length)return;
-      const c={};rs.forEach(r=>{c[r.part]=(c[r.part]||0)+1;});
-      h+='<div class="card" style="margin-top:10px"><h3>Tier '+k+'</h3>'+planTopSvg(res,k)+
-        '<p class="rowout">'+Object.keys(c).map(Number).map(id=>pLet(id)+': '+nf0.format(c[id])).join(' · ')+' · total '+nf0.format(rs.length)+' ball</p></div>';
-    });
-  }
-  h+='<p class="hint" style="margin-top:10px">Susunan ini contoh dari hitungan komputer, bukan perintah mutlak. Atur ulang di lapangan sesuai berat, kerapuhan, dan urutan bongkar. Barang berat biasanya di tier bawah.</p>';
+  h+='<p class="hint" style="margin-top:10px">Susunan ini contoh dari hitungan komputer, bukan perintah mutlak. Atur ulang di lapangan sesuai berat, kerapuhan, dan urutan bongkar. Rol di tumpukan tinggi perlu pengaman supaya tidak menggelinding.</p>';
   h+='<div style="margin-top:6px"><button type="button" class="lnk" data-plan="go">Hitung ulang</button></div>';
   el.innerHTML=h;
 }
