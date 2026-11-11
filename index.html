@@ -215,6 +215,8 @@ function load(){
   return sample();
 }
 let S=load();
+if(!S.manual||!Array.isArray(S.manual.rows))S.manual={on:false,rows:[]};
+if(!S.berdiri)S.berdiri='2';
 if(!BOX[S.box]&&S.box!=='kustom')S.box='20';
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 
@@ -575,6 +577,7 @@ function paintHsave(){
       '<label class="field"><span>Ball yang benar-benar masuk (opsional)</span><input class="num" inputmode="decimal" data-hf="masuk" value="'+esc(d.masuk)+'"></label>'+
       '<label class="field"><span>Catatan (opsional)</span><input data-hf="catatan" value="'+esc(d.catatan)+'" placeholder="mis. tujuan, no. kontainer" autocomplete="off"></label>'+
     '</div>'+
+    (S.manual&&S.manual.on&&S.manual.rows&&S.manual.rows.length?'<p class="hint">Susunan manual ('+S.manual.rows.length+' blok tier) ikut tersimpan.</p>':'')+
     '<p class="err" id="herr" hidden></p>'+
     '<div class="actions"><button type="button" class="btn primary" id="hsv" data-hact="save">Simpan</button><button type="button" class="btn" data-hact="cancel">Batal</button></div>';
   if(H.err){const e=$('#herr');e.textContent=H.err;e.hidden=false;}
@@ -589,8 +592,11 @@ function saveHistory(){
     if(ents.length)items.push({nama:String(it.nama||'').trim(),kat:catName(it.kat)?it.kat:'',entries:ents});
   });
   if(!items.length){H.err='Belum ada isian lengkap untuk disimpan.';paintHsave();return;}
+  let susunan=null;
+  try{susunan=manualSnapshot(P,L,T);}catch(err){console.warn(err);}
   const rec={isRiw:true,tgl:d.tgl,hasil:d.hasil,catatan:d.catatan.trim(),masuk:num(d.masuk)||0,P:P,L:L,T:T,
     kontainer:BOX[S.box]?BOX[S.box].nama:'Kustom',rot:!!S.rot,items:items,createdAt:Date.now()};
+  if(susunan)rec.susunan=susunan;
   const btn=$('#hsv');if(btn)btn.disabled=true;
   BStore.save(rec).then(()=>{H.saveOpen=false;H.draft=null;H.err='';paintHsave();renderOut();},
     e=>{H.err=bErr(e);paintHsave();});
@@ -616,6 +622,9 @@ function planOri(d,rot){
   ix.forEach(i=>{const o={ix:i,a:d[i[0]],b:d[i[1]],c:d[i[2]]},k=o.a+','+o.b+','+o.c;if(!seen[k]){seen[k]=1;out.push(o);}});
   return out;
 }
+/* Tier berdiri = sisi terpanjang ball tegak (vertikal). Ball kubus tidak punya posisi berdiri. */
+function isStandDims(b,c,d){const mx=Math.max(b,c,d),mn=Math.min(b,c,d);return mx>mn+PEPS&&c>=mx-PEPS;}
+function isStandOri(o){return isStandDims(o.b,o.c,o.a);}
 /* Susunan lingkaran pada penampang kontainer (u = lebar, v = tinggi). Kembalikan titik pusat, tier = urutan lapis dari lantai. */
 function circLayout(u,v,d){
   const pitch=d*Math.sqrt(3)/2;
@@ -755,11 +764,11 @@ function oriSets(balG,rot,pref){
     return f.length?f:o;
   });
 }
-function planLayersRun(balG,X0,cap,rot,wA,noise,rng,oriC){
-  const rem=balG.map(g=>g.m),layers=[],vols=balG.map(g=>g.p*g.l*g.t),idxs=balG.map((_,i)=>i);
+function planLayersRun(balG,X0,cap,rot,wA,noise,rng,oriC,rem0,maxL){
+  const rem=(rem0||balG.map(g=>g.m)).slice(),layers=[],vols=balG.map(g=>g.p*g.l*g.t),idxs=balG.map((_,i)=>i);
   const minD=Math.min.apply(null,balG.map(g=>Math.min(g.p,g.l,g.t)));
   let X=X0,guard=0;
-  while(rem.some(r=>r>0)&&guard++<900){
+  while(rem.some(r=>r>0)&&guard++<900&&layers.length<(maxL||900)){
     const room=cap.P-X;if(room<minD-PEPS)break;
     let best=null;
     balG.forEach((g,gi)=>{
@@ -791,14 +800,15 @@ function planLayersRun(balG,X0,cap,rot,wA,noise,rng,oriC){
   const total=balG.reduce((a,g)=>a+g.m,0);
   return {layers:layers,placed:total-rem.reduce((a,b)=>a+b,0),usedX:X,rem:rem};
 }
-function planLayers(balG,X0,cap,rot,pref,ms){
+function planLayers(balG,X0,cap,rot,pref,ms,opt){
   if(!balG.length)return {layers:[],placed:0,usedX:X0};
-  const oriC=oriSets(balG,rot,pref),rng=mkRng(777);
-  const strat=[[0.02,0],[0,0],[0.08,0],[-0.02,0],[0.2,0]];
+  opt=opt||{};
+  const oriC=opt.oriC||oriSets(balG,rot,pref),rng=mkRng(777);
+  const strat=[[0.02,0],[0,0],[0.08,0],[-0.02,0],[0.2,0]],nS=opt.nStrat||strat.length;
   const better=(a,b)=>!b||a.placed>b.placed||(a.placed===b.placed&&(a.usedX<b.usedX-PEPS||(Math.abs(a.usedX-b.usedX)<=PEPS&&a.layers.length<b.layers.length)));
   let best=null,it=0;const t0=Date.now();
-  while(it<80&&(it<strat.length||Date.now()-t0<ms)){
-    const s=it<strat.length?strat[it]:[-0.02+rng()*0.12,0.05];
+  while(it<80&&(it<nS||Date.now()-t0<ms)){
+    const s=(it<strat.length&&it<nS)?strat[it]:[-0.02+rng()*0.12,0.05];
     const r=planLayersRun(balG,X0,cap,rot,s[0],s[1],rng,oriC);
     if(better(r,best))best=r;
     it++;
@@ -806,12 +816,84 @@ function planLayers(balG,X0,cap,rot,pref,ms){
   best.iters=it;
   return best;
 }
+/* Aturan tier berdiri: badan muatan hanya memakai posisi tidur. Kalau belum semua masuk, ujung kontainer (dekat pintu) disisihkan untuk paling banyak nMax tier berdiri. */
+function planStand(balG,X0,cap,rot,pref,ms,nMax){
+  if(!balG.length)return {layers:[],placed:0,usedX:X0};
+  const oriFull=oriSets(balG,rot,'auto');
+  const oriBody=oriSets(balG,rot,pref).map(os=>{const f=os.filter(o=>!isStandOri(o));return f.length?f:os;});
+  const total=balG.reduce((a,g)=>a+g.m,0);
+  const better=(a,b)=>!b||a.placed>b.placed||(a.placed===b.placed&&(a.usedX<b.usedX-PEPS||(Math.abs(a.usedX-b.usedX)<=PEPS&&a.layers.length<b.layers.length)));
+  let best=planLayers(balG,X0,cap,rot,pref,ms,{oriC:oriBody});
+  if(best.placed>=total)return best;
+  const ths=[];
+  oriFull.forEach(os=>os.forEach(o=>{if(isStandOri(o)&&ths.indexOf(o.a)<0)ths.push(o.a);}));
+  const res=[];
+  ths.forEach(a=>res.push(a));
+  if(nMax>=2)ths.forEach(a=>ths.forEach(b=>{if(a<=b)res.push(a+b);}));
+  const reserves=Array.from(new Set(res.map(v=>Math.round(v*100)/100))).filter(R=>R>0&&R<=cap.P-X0+PEPS).sort((p,q)=>p-q);
+  const t0=Date.now();
+  for(let k=0;k<reserves.length;k++){
+    if(Date.now()-t0>Math.max(ms,300)*4)break;
+    const R=reserves[k],cap2={P:cap.P-R,L:cap.L,T:cap.T};
+    if(cap2.P<=X0)continue;
+    const b=planLayers(balG,X0,cap2,rot,pref,Math.min(ms,60),{oriC:oriBody,nStrat:2});
+    const s=planLayersRun(balG,b.usedX,cap,rot,0.02,0,mkRng(5),oriFull,b.rem,nMax);
+    const comb={layers:b.layers.concat(s.layers),placed:s.placed,usedX:s.usedX,rem:s.rem,iters:b.iters+1};
+    if(better(comb,best))best=comb;
+  }
+  return best;
+}
+/* ---------- susun manual ---------- */
+function gKey(g,rot){return rot?[g.p,g.l,g.t].slice().sort((x,y)=>x-y).join('x'):[g.p,g.l,g.t].join('x');}
+function oriVal(o){return o.a+','+o.b+','+o.c;}
+function grpLab(g){return g.parts.map(p=>p.label).join(' + ');}
+function grpDim(g){return nf.format(g.p)+'×'+nf.format(g.l)+'×'+nf.format(g.t);}
+function oriTxt(o){return (isStandOri(o)?'Berdiri':'Tidur')+' · tebal '+nf.format(o.a)+' (searah panjang) · lebar '+nf.format(o.b)+' × tinggi '+nf.format(o.c);}
+function manInfo(r,balG,cap,rot){
+  const gi=balG.findIndex(g=>gKey(g,rot)===r.g);
+  if(gi<0)return {noG:true};
+  const g=balG[gi],o=planOri([g.p,g.l,g.t],rot).find(q=>oriVal(q)===r.o);
+  if(!o)return {gi:gi,g:g,noO:true};
+  const dp=pack2D(cap.L,cap.T,[{b:o.b,c:o.c}]);
+  const k=Math.floor(num(r.k)),nw=Math.floor(num(r.n));
+  return {gi:gi,g:g,o:o,dp:dp,max:dp.n,nUse:dp.n>0?(nw>0?Math.min(nw,dp.n):dp.n):0,k:k>0?k:0,stand:isStandOri(o)};
+}
+function defOri(g,rot,cap){
+  const os=planOri([g.p,g.l,g.t],rot);let best=null;
+  os.forEach(o=>{if(isStandOri(o))return;const n=pack2D(cap.L,cap.T,[{b:o.b,c:o.c}]).n,sc=n*o.b*o.c;if(!best||sc>best.sc)best={o:o,sc:sc};});
+  return oriVal(best?best.o:os[0]);
+}
+function manualLayers(balG,X0,cap,rot,rows){
+  const rem=balG.map(g=>g.m),layers=[],warn=[],man=[];
+  let X=X0;
+  rows.forEach((r,ri)=>{
+    const inf=manInfo(r,balG,cap,rot),nm='Blok '+(ri+1);
+    if(inf.noG){warn.push(nm+': barangnya sudah tidak ada di isian, pilih ulang.');return;}
+    if(inf.noO){warn.push(nm+': posisi ball tidak tersedia, pilih ulang.');return;}
+    const o=inf.o,m={ri:ri,gi:inf.gi,first:layers.length,count:0,a:o.a,b:o.b,c:o.c,nUse:inf.nUse,max:inf.max,k:inf.k,stand:inf.stand,lab:grpLab(inf.g),ok:true};
+    man.push(m);
+    if(inf.nUse<1){warn.push(nm+': ball tidak muat di penampang kontainer pada posisi ini.');return;}
+    const lim=inf.k>0?inf.k:9999;
+    for(let t=0;t<lim;t++){
+      if(rem[inf.gi]<=0){if(inf.k>0)warn.push(nm+': ball sudah habis di tier ke-'+(t+1)+'.');break;}
+      if(X+o.a>cap.P+PEPS){if(inf.k>0)warn.push(nm+': tier ke-'+(t+1)+' melewati panjang kontainer, tidak ditempatkan.');break;}
+      const cnt=Math.min(inf.nUse,rem[inf.gi]);
+      const bx=inf.dp.rects.slice(0,cnt).map(q=>({y:q.y,z:q.z,b:q.b,c:q.c,xoff:0,d:o.a,gi:inf.gi}));
+      layers.push({x0:X,len:o.a,boxes:bx,n:cnt});rem[inf.gi]-=cnt;X+=o.a;m.count++;
+    }
+  });
+  const total=balG.reduce((a,g)=>a+g.m,0);
+  return {layers:layers,placed:total-rem.reduce((a,b)=>a+b,0),usedX:X,rem:rem,iters:0,warn:warn,man:man};
+}
 /* Gabungkan: rol di depan, lapis ball sesudahnya. Tier = satu dinding penuh (tier 1 paling depan, tier terakhir paling dekat pintu). Tier yang persis sama digabung di daftar. */
-function buildPlan(used,cap,rot,ms,pref){
+function buildPlan(used,cap,rot,ms,pref,stand,manual){
   const groups=planGroups(used,rot);
   const rolG=groups.filter(g=>g.rol),balG=groups.filter(g=>!g.rol);
   const rs=planRolls(rolG,cap);
-  const bp=planLayers(balG,rs.usedX,cap,rot,pref||'auto',ms||400);
+  let bp;
+  if(manual)bp=manualLayers(balG,rs.usedX,cap,rot,manual);
+  else if(rot&&stand&&stand!=='bebas')bp=planStand(balG,rs.usedX,cap,rot,pref||'auto',ms||400,Math.max(1,parseInt(stand,10)||2));
+  else bp=planLayers(balG,rs.usedX,cap,rot,pref||'auto',ms||400);
   const layers=[];
   rs.segs.forEach(sg=>{
     sg.partCount={};
@@ -828,6 +910,7 @@ function buildPlan(used,cap,rot,ms,pref){
     for(let i=0;i<fullCols;i++)layers.push({kind:'rol',x0:sg.x0+i*sg.len,len:sg.len,n:N,pts:sg.lay.pts,d:sg.d,hex:sg.lay.hex,part:pid,partial:false});
     if(partial)layers.push({kind:'rol',x0:sg.x0+fullCols*sg.len,len:sg.len,n:sg.remLast,pts:sg.lay.pts.slice(0,sg.remLast),d:sg.d,hex:sg.lay.hex,part:pid,partial:true});
   });
+  const nRolL=layers.length;
   const ptr=balG.map(()=>({pi:0,u:0}));
   bp.layers.forEach(L=>{
     L.boxes.sort((p,q)=>p.z-q.z||p.y-q.y||p.xoff-q.xoff);
@@ -836,7 +919,7 @@ function buildPlan(used,cap,rot,ms,pref){
       while(p.pi<g.parts.length-1&&p.u>=g.parts[p.pi].n){p.pi++;p.u=0;}
       p.u++;b.part=g.parts[p.pi].id;
     });
-    layers.push({kind:'ball',x0:L.x0,len:L.len,n:L.n,boxes:L.boxes});
+    layers.push({kind:'ball',x0:L.x0,len:L.len,n:L.n,boxes:L.boxes,stand:L.boxes.some(b=>isStandDims(b.b,b.c,b.d))});
   });
   layers.sort((p,q)=>p.x0-q.x0);
   const sigOf=l=>l.kind==='rol'?['R',l.len,l.n,l.part,l.d].join('|'):['B',l.len].concat(l.boxes.map(b=>[b.y,b.z,b.b,b.c,b.xoff,b.d,b.part].join(','))).join(';');
@@ -851,7 +934,8 @@ function buildPlan(used,cap,rot,ms,pref){
   const nParts=groups.reduce((a,g)=>a+g.parts.length,0);
   return {groups:groups,balG:balG,rolG:rolG,layers:layers,entries:entries,nTier:layers.length,nParts:nParts,
     placed:placedBall+placedRol,total:totalBall+totalRol,placedBall:placedBall,totalBall:totalBall,placedRol:placedRol,totalRol:totalRol,
-    usedX:layers.reduce((m,l)=>Math.max(m,l.x0+l.len),0),cap:cap,iters:bp.iters};
+    usedX:layers.reduce((m,l)=>Math.max(m,l.x0+l.len),0),cap:cap,iters:bp.iters,manual:!!manual,warn:bp.warn||[],
+    man:bp.man?bp.man.map(m=>Object.assign({},m,{t0:nRolL+m.first+1,t1:nRolL+m.first+m.count})):null};
 }
 
 /* ---------- gambaran susunan muat per tier (FCL) ---------- */
@@ -864,22 +948,31 @@ function planUsed(){
   return rows.filter(r=>r.balls>0&&r.vb>0);
 }
 function planSig(used,cap){
-  return JSON.stringify([cap.P,cap.L,cap.T,!!S.rot,S.arah||'auto',used.map(r=>[r.p,r.l,r.t,r.rol?1:0,r.balls,r.label])]);
+  return JSON.stringify([cap.P,cap.L,cap.T,!!S.rot,S.arah||'auto',berNow(),used.map(r=>[r.p,r.l,r.t,r.rol?1:0,r.balls,r.label])]);
 }
 const ARAH=[['auto','Otomatis (paling padat)'],['panjang','Sisi terpanjang searah panjang kontainer'],['lintang','Sisi terpanjang melintang (lebar atau tinggi)']];
 const arahSel=()=>'<label class="field"><span>Arah susunan ball</span><select data-plan="arah">'+ARAH.map(o=>'<option value="'+o[0]+'"'+((S.arah||'auto')===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></label>';
+const berNow=()=>S.berdiri||'2';
+const BERS=[['2','Hanya di 2 tier terakhir'],['1','Hanya di tier terakhir'],['bebas','Bebas, di tier mana saja']];
+const berSel=()=>'<label class="field"><span>Tier berdiri (ball ditegakkan)</span><select data-plan="berdiri">'+BERS.map(o=>'<option value="'+o[0]+'"'+(berNow()===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></label>'+
+  '<p class="hint">Tier berdiri = sisi terpanjang ball tegak ke atas. Tier lainnya dibuat tidur. Tidak berlaku kalau Ball boleh ditidurkan dimatikan.</p>';
+function planModeBar(){
+  const on=!!(S.manual&&S.manual.on);
+  return '<div class="actions" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn'+(on?'':' primary')+'" data-plan="m-auto" aria-pressed="'+(!on)+'">Susunan otomatis</button><button type="button" class="btn'+(on?' primary':'')+'" data-plan="m-manual" aria-pressed="'+on+'">Susun manual</button></div>';
+}
 function paintPlan(){
   const el=$('#plan');if(!el)return;
   const P=num(S.P),L=num(S.L),T=num(S.T);
   const used=planUsed();
   if(S.mode!=='fcl'||!used.length||!(P&&L&&T)){el.innerHTML='';PS.res=null;PS.sig='';return;}
+  if(S.manual&&S.manual.on){paintManual(used,{P:P,L:L,T:T});return;}
   const sig=planSig(used,{P:P,L:L,T:T});
-  if(PS.res&&PS.sig===sig)return;
+  if(PS.res&&PS.sig===sig&&!PS.res.manual)return;
   PS.res=null;PS.sig=sig;
   el.innerHTML=PS.busy?'<p class="hint">Menghitung susunan…</p>':
-    '<p class="sub">Gambaran susunan muat</p>'+
-    '<p class="hint">Lihat contoh cara menata ball per tier. Satu tier adalah satu dinding penuh dari lantai sampai atap, dimuat dari dinding depan kontainer ke arah pintu. Tersedia juga tampak 3D seluruh kontainer.</p>'+
-    arahSel()+
+    planModeBar()+'<p class="sub" style="margin-top:12px">Gambaran susunan muat</p>'+
+    '<p class="hint">Lihat contoh cara menata ball per tier. Satu tier adalah satu dinding penuh dari lantai sampai atap, dimuat dari dinding depan kontainer ke arah pintu. Tersedia juga tampak 3D seluruh kontainer. Mau menyusun sendiri? Pilih Susun manual.</p>'+
+    arahSel()+berSel()+
     '<div><button type="button" class="btn primary" data-plan="go">Buat gambaran susunan muat</button></div>';
 }
 const pColF=(i,l)=>'hsl('+((i*57+20)%360)+' 52% '+l+'%)';
@@ -951,7 +1044,7 @@ function planWallSvg(ly,cap,multi){
 const chip=i=>'<b style="display:inline-block;min-width:20px;padding:0 5px;border-radius:4px;background:'+pColF(i,72)+';color:#1b1b1b">'+pLet(i)+'</b>';
 function layerInfo(res,ly,first,last,count){
   const multi=res.nParts>1;
-  let h='<p class="rowout">Mulai '+nf0.format(ly.x0)+' cm dari dinding depan · tebal '+nf.format(ly.len)+' cm'+(count>1?' per tier, '+count+' tier sama':'')+' · '+nf0.format(ly.n*(count||1))+' '+(ly.kind==='rol'?'rol':'ball')+' total</p>';
+  let h=(ly.kind==='ball'&&ly.stand?'<p class="rowout"><b>Tier berdiri</b> · ada ball yang ditegakkan (sisi terpanjang ke atas)</p>':'')+'<p class="rowout">Mulai '+nf0.format(ly.x0)+' cm dari dinding depan · tebal '+nf.format(ly.len)+' cm'+(count>1?' per tier, '+count+' tier sama':'')+' · '+nf0.format(ly.n*(count||1))+' '+(ly.kind==='rol'?'rol':'ball')+' total</p>';
   if(ly.kind==='ball'){
     const grp={};
     ly.boxes.forEach(r=>{const k=r.part+'|'+r.d+'|'+r.b+'|'+r.c;(grp[k]||(grp[k]={part:r.part,d:r.d,b:r.b,c:r.c,n:0})).n++;});
@@ -964,7 +1057,7 @@ function layerInfo(res,ly,first,last,count){
   return h;
 }
 function paintPlanView(){
-  const res=PS.res;if(!res)return;
+  const res=PS.res;if(!res||!res.nTier)return;
   const n=res.nTier,cur=Math.min(Math.max(1,PS.cur||n),n),ly=res.layers[cur-1];
   const d3=$('#pv-3d'),wl=$('#pv-wall'),lab=$('#pv-lab'),sl=$('#pv-sl');
   if(lab)lab.textContent='Tier '+cur+' dari '+n;
@@ -972,16 +1065,21 @@ function paintPlanView(){
   if(d3)d3.innerHTML=planIso(res,cur);
   if(wl)wl.innerHTML='<p class="sub">Tier '+cur+' tampak dari pintu</p>'+planWallSvg(ly,res.cap,res.nParts>1)+layerInfo(res,ly,cur,cur,1);
 }
-function renderPlan(res){
-  const el=$('#plan');if(!el)return;
+function planBody(res,man){
   const cap=res.cap,short=res.total-res.placed;
   const leftX=Math.max(0,cap.P-res.usedX);
-  PS.cur=res.nTier;
-  let h='<p class="sub">Gambaran susunan muat</p>';
-  h+='<div class="kv total"><span class="k">Masuk dalam rencana</span><span class="v t-'+(short>0?'bad':'good')+'">'+nf0.format(res.placed)+' dari '+nf0.format(res.total)+'</span></div>';
+  let h='<div class="kv total"><span class="k">'+(man?'Sudah tersusun':'Masuk dalam rencana')+'</span><span class="v t-'+(short>0?'bad':'good')+'">'+nf0.format(res.placed)+' dari '+nf0.format(res.total)+'</span></div>';
   h+='<p class="hint">'+nf0.format(res.nTier)+' tier. Panjang terpakai ±'+nf0.format(res.usedX)+' cm dari '+nf0.format(cap.P)+' cm'+(leftX>0?' (sisa ±'+nf0.format(leftX)+' cm)':'')+'.</p>';
-  if(short>0)h+='<p class="over-note">Dalam rencana ini '+nf0.format(short)+' '+(res.totalRol&&!res.totalBall?'rol':'ball')+' belum dapat tempat.</p><p class="hint">Ini satu contoh susunan dari hitungan komputer dengan ukuran kaku. Di lapangan ball yang empuk bisa dipepatkan sehingga muat lebih banyak, jadi pakai status Estimasi masuk di atas sebagai patokan.</p>';
-  h+=arahSel();
+  const sl=[];res.layers.forEach((l,i)=>{if(l.stand)sl.push(i+1);});
+  if(res.nTier)h+='<p class="hint">'+(sl.length?'Tier berdiri: tier '+sl.slice(0,12).join(', ')+(sl.length>12?' dan seterusnya':'')+'.':'Tidak ada tier berdiri.')+'</p>';
+  const lim=parseInt(berNow(),10)||0;
+  if(lim&&S.rot&&sl.some(i=>i<=res.nTier-lim))h+='<p class="t-warn">Ada tier berdiri yang bukan di '+(lim===1?'tier terakhir':lim+' tier terakhir')+'.</p>';
+  (res.warn||[]).forEach(w=>{h+='<p class="over-note">'+esc(w)+'</p>';});
+  if(short>0){
+    if(man)h+='<p class="over-note">Belum tersusun: '+nf0.format(short)+' '+(res.totalRol&&!res.totalBall?'rol':'ball')+'. Tambah jumlah tier atau tambah blok tier.</p>';
+    else h+='<p class="over-note">Dalam rencana ini '+nf0.format(short)+' '+(res.totalRol&&!res.totalBall?'rol':'ball')+' belum dapat tempat.</p><p class="hint">Ini satu contoh susunan dari hitungan komputer dengan ukuran kaku. Di lapangan ball yang empuk bisa dipepatkan sehingga muat lebih banyak, jadi pakai status Estimasi masuk di atas sebagai patokan.</p>';
+  }
+  if(!man)h+=arahSel()+berSel();
   if(res.nParts>1){
     h+='<p class="sub" style="margin-top:6px">Isi per kelompok</p><ul class="lines">';
     res.groups.forEach(g=>g.parts.forEach(p=>{
@@ -989,6 +1087,7 @@ function renderPlan(res){
     }));
     h+='</ul>';
   }
+  if(!res.nTier)return h+'<p class="hint">Belum ada tier. Tambahkan blok tier di atas.</p>';
   h+='<p class="sub" style="margin-top:10px">Geser untuk melihat tier demi tier</p>'+
     '<div class="toolbar" style="grid-template-columns:auto minmax(0,1fr) auto;align-items:center">'+
       '<button type="button" class="btn" data-plan="prev" aria-label="Tier sebelumnya">‹</button>'+
@@ -1002,14 +1101,58 @@ function renderPlan(res){
   h+='<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:600;min-height:32px">Daftar semua tier ('+res.entries.length+' gambar)</summary>'+
      '<p class="hint" style="margin-top:6px">Tier yang bentuknya persis sama digabung jadi satu gambar. Kiri gambar = sisi kiri kontainer saat pintu dibuka. Muat dari tier 1 sampai tier terakhir.</p>';
   res.entries.forEach(e=>{
-    const title=e.t0===e.t1?'Tier '+e.t0:'Tier '+e.t0+' sampai '+e.t1;
+    const title=(e.t0===e.t1?'Tier '+e.t0:'Tier '+e.t0+' sampai '+e.t1)+(e.layer.stand?' · berdiri':'');
     h+='<div class="card" style="margin-top:10px"><h3>'+title+'</h3>'+planWallSvg(e.layer,cap,res.nParts>1)+layerInfo(res,e.layer,e.t0,e.t1,e.count)+'</div>';
   });
   h+='</details>';
-  h+='<p class="hint" style="margin-top:10px">Susunan ini contoh dari hitungan komputer, bukan perintah mutlak. Atur ulang di lapangan sesuai berat, kerapuhan, dan urutan bongkar. Rol di tumpukan tinggi perlu pengaman supaya tidak menggelinding. Pada tampak 3D, rol digambar sebagai balok per tier.</p>';
-  h+='<div style="margin-top:6px"><button type="button" class="lnk" data-plan="go">Hitung ulang</button></div>';
+  h+='<p class="hint" style="margin-top:10px">'+(man?'Ini susunan yang Anda atur sendiri. ':'Susunan ini contoh dari hitungan komputer, bukan perintah mutlak. ')+'Atur ulang di lapangan sesuai berat, kerapuhan, dan urutan bongkar. Rol di tumpukan tinggi perlu pengaman supaya tidak menggelinding. Pada tampak 3D, rol digambar sebagai balok per tier.</p>';
+  if(!man)h+='<div style="margin-top:6px"><button type="button" class="lnk" data-plan="go">Hitung ulang</button></div>';
+  return h;
+}
+function renderPlan(res){
+  const el=$('#plan');if(!el)return;
+  PS.cur=res.nTier;
+  el.innerHTML=planModeBar()+'<p class="sub" style="margin-top:12px">Gambaran susunan muat</p>'+planBody(res,false);
+  paintPlanView();
+}
+function manRowHtml(r,i,res,cap,rot,n){
+  const inf=manInfo(r,res.balG,cap,rot),m=res.man&&res.man.find(x=>x.ri===i);
+  const gopts=res.balG.map(g=>'<option value="'+esc(gKey(g,rot))+'"'+(gKey(g,rot)===r.g?' selected':'')+'>'+esc(grpLab(g))+' · '+grpDim(g)+' · '+nf0.format(g.m)+' ball</option>').join('');
+  let h='<div class="card" style="margin-top:10px"><div class="entry-head"><span class="sub">Blok '+(i+1)+(m&&m.count?' · tier '+(m.t0===m.t1?m.t0:m.t0+' sampai '+m.t1):'')+(inf.stand?' · berdiri':'')+'</span></div>'+
+    '<label class="field"><span>Barang</span><select data-mf="g" data-i="'+i+'">'+(inf.noG?'<option value="" selected>Pilih barang…</option>':'')+gopts+'</select></label>';
+  if(inf.g){
+    h+='<label class="field"><span>Posisi ball di tier ini</span><select data-mf="o" data-i="'+i+'">'+(inf.noO?'<option value="" selected>Pilih posisi…</option>':'')+
+      planOri([inf.g.p,inf.g.l,inf.g.t],rot).map(o=>'<option value="'+oriVal(o)+'"'+(oriVal(o)===r.o?' selected':'')+'>'+oriTxt(o)+'</option>').join('')+'</select></label>';
+  }
+  h+='<div class="grid g2"><label class="field"><span>Jumlah tier</span><input class="num" inputmode="numeric" data-mf="k" data-i="'+i+'" value="'+esc(r.k)+'" placeholder="sampai habis"></label>'+
+    '<label class="field"><span>Ball per tier</span><input class="num" inputmode="numeric" data-mf="n" data-i="'+i+'" value="'+esc(r.n)+'" placeholder="'+(inf.o?'maks. '+nf0.format(inf.max):'maks.')+'"></label></div>';
+  h+='<div class="c-act">'+(i>0?'<button type="button" class="lnk" data-man="up" data-i="'+i+'">Naik</button>':'')+(i<n-1?'<button type="button" class="lnk" data-man="down" data-i="'+i+'">Turun</button>':'')+'<button type="button" class="lnk bad" data-man="del" data-i="'+i+'">Hapus blok</button></div></div>';
+  return h;
+}
+function paintManual(used,cap){
+  const el=$('#plan'),rot=!!S.rot,rows=S.manual.rows;
+  PS.sig='';
+  let res=null;
+  try{res=buildPlan(used,cap,rot,0,'auto','bebas',rows);}catch(err){console.warn(err);}
+  if(!res||!res.balG.length){PS.res=null;el.innerHTML=planModeBar()+'<p class="hint" style="margin-top:12px">Susun manual dipakai untuk ball. Rol (lose packing) memakai susunan otomatis.</p>';return;}
+  PS.res=res;PS.cur=res.nTier;
+  let h=planModeBar()+'<p class="sub" style="margin-top:12px">Susun manual</p>'+
+    '<p class="hint">Atur sendiri susunannya dari dinding depan (blok paling atas) ke arah pintu (blok paling bawah). Satu blok berisi beberapa tier yang bentuknya sama. Kosongkan Jumlah tier supaya diisi sampai ball barang itu habis. Susunan ini ikut tersimpan di riwayat saat Anda menekan Simpan ke riwayat, jadi nanti bisa dilihat dulu menyusunnya seperti apa.</p>'+
+    (res.rolG.length?'<p class="hint">Rol (lose packing) tetap otomatis di bagian depan.</p>':'')+berSel();
+  if(S.manual.note)h+='<p class="notice">'+esc(S.manual.note)+'</p>';
+  rows.forEach((r,i)=>{h+=manRowHtml(r,i,res,cap,rot,rows.length);});
+  h+='<div class="actions" style="margin-top:12px;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary" data-man="add">+ Tambah blok tier</button>'+(rows.length?'<button type="button" class="btn" data-man="clear">Kosongkan</button>':'')+'</div>';
+  h+='<div style="margin-top:14px">'+planBody(res,true)+'</div>';
   el.innerHTML=h;
   paintPlanView();
+}
+function manualSnapshot(P,L,T){
+  if(!(S.manual&&S.manual.on&&S.manual.rows&&S.manual.rows.length))return null;
+  const res=buildPlan(planUsed(),{P:P,L:L,T:T},!!S.rot,0,'auto','bebas',S.manual.rows);
+  if(!res.man||!res.man.length)return null;
+  return {rows:S.manual.rows.map(r=>({g:r.g,o:r.o,k:String(r.k==null?'':r.k),n:String(r.n==null?'':r.n)})),
+    ringkas:res.man.map(m=>({lab:m.lab,a:m.a,b:m.b,c:m.c,n:m.nUse,jml:m.count,t0:m.count?m.t0:0,t1:m.count?m.t1:0,stand:!!m.stand})),
+    berdiri:berNow()};
 }
 function runPlan(){
   const used=planUsed(),cap={P:num(S.P),L:num(S.L),T:num(S.T)};
@@ -1018,7 +1161,7 @@ function runPlan(){
   PS.busy=true;$('#plan').innerHTML='<p class="hint">Menghitung susunan…</p>';
   setTimeout(function(){
     try{
-      const res=buildPlan(used,cap,!!S.rot,600,S.arah||'auto');
+      const res=buildPlan(used,cap,!!S.rot,600,S.arah||'auto',berNow());
       PS.res=res;PS.sig=sig;PS.busy=false;renderPlan(res);
     }catch(e){
       console.warn(e);PS.busy=false;PS.res=null;
@@ -1034,11 +1177,41 @@ document.addEventListener('click',function(e){
   const b=e.target.closest('[data-plan]');if(!b)return;
   const a=b.dataset.plan;
   if(a==='go')runPlan();
+  else if(a==='m-manual'){
+    if(!S.manual)S.manual={on:false,rows:[]};
+    S.manual.on=true;S.manual.note='';
+    if(!S.manual.rows.length)addManRow();
+    PS.res=null;PS.sig='';save();paintPlan();
+  }
+  else if(a==='m-auto'){S.manual.on=false;PS.res=null;PS.sig='';save();paintPlan();}
   else if(a==='prev')stepTier(-1);
   else if(a==='next')stepTier(1);
 });
+function addManRow(){
+  const rot=!!S.rot,cap={P:num(S.P),L:num(S.L),T:num(S.T)};
+  const groups=planGroups(planUsed(),rot).filter(g=>!g.rol);
+  if(!groups.length)return;
+  const rows=S.manual.rows,usedG=rows.map(r=>r.g);
+  const g=groups.find(x=>usedG.indexOf(gKey(x,rot))<0)||groups[0];
+  rows.push({g:gKey(g,rot),o:defOri(g,rot,cap),k:'',n:''});
+}
+document.addEventListener('click',function(e){
+  const b=e.target.closest('[data-man]');if(!b||!S.manual)return;
+  const a=b.dataset.man,i=+b.dataset.i,rows=S.manual.rows;
+  S.manual.note='';
+  if(a==='add')addManRow();
+  else if(a==='del')rows.splice(i,1);
+  else if(a==='up'&&i>0){const x=rows[i];rows[i]=rows[i-1];rows[i-1]=x;}
+  else if(a==='down'&&i<rows.length-1){const x=rows[i];rows[i]=rows[i+1];rows[i+1]=x;}
+  else if(a==='clear')S.manual.rows=[];
+  save();paintPlan();
+});
 document.addEventListener('input',function(e){
   const t=e.target;
+  if(t&&t.dataset&&t.dataset.mf&&S.manual&&(t.dataset.mf==='k'||t.dataset.mf==='n')){
+    const r=S.manual.rows[+t.dataset.i];if(r){r[t.dataset.mf]=t.value;save();}
+    return;
+  }
   if(t&&t.dataset&&t.dataset.plan==='slide'&&PS.res){PS.cur=+t.value;paintPlanView();}
 });
 document.addEventListener('change',function(e){
@@ -1046,6 +1219,20 @@ document.addEventListener('change',function(e){
   if(t&&t.dataset&&t.dataset.plan==='arah'){
     S.arah=t.value;save();
     if(PS.res)runPlan();else paintPlan();
+  }else if(t&&t.dataset&&t.dataset.plan==='berdiri'){
+    S.berdiri=t.value;save();
+    if(S.manual&&S.manual.on)paintPlan();
+    else if(PS.res)runPlan();else paintPlan();
+  }else if(t&&t.dataset&&t.dataset.mf&&S.manual){
+    const r=S.manual.rows[+t.dataset.i];if(!r)return;
+    const f=t.dataset.mf,rot=!!S.rot;
+    if(f==='g'){
+      const g=planGroups(planUsed(),rot).filter(x=>!x.rol).find(x=>gKey(x,rot)===t.value);
+      r.g=t.value;r.n='';
+      if(g)r.o=defOri(g,rot,{P:num(S.P),L:num(S.L),T:num(S.T)});
+    }else if(f==='o'){r.o=t.value;r.n='';}
+    else r[f]=t.value;
+    S.manual.note='';save();paintPlan();
   }
 });
 
@@ -1213,9 +1400,12 @@ function paintRiwayat(){
     const cap=histCap(h),ev=evalLoad(h.items,cap,h.rot);
     const mix=(h.items||[]).length>1||(h.items||[]).some(it=>(it.entries||[]).length>1);
     const match=ev.used.length&&(ev.muat===(h.hasil==='muat'));
+    const sus=(h.susunan&&Array.isArray(h.susunan.ringkas)&&h.susunan.ringkas.length)?'<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:600;min-height:32px">Susunan manual ('+h.susunan.ringkas.length+' blok)</summary>'+
+      h.susunan.ringkas.map(r=>'<p class="rowout">'+(r.t0&&r.t1>=r.t0?'Tier '+(r.t0===r.t1?r.t0:r.t0+' sampai '+r.t1):'Tidak tertata')+' · '+esc(r.lab)+' · '+nf0.format(r.n)+' ball per tier · tebal '+nf.format(r.a)+' searah panjang, lebar '+nf.format(r.b)+' × tinggi '+nf.format(r.c)+' cm · '+(r.stand?'<b>berdiri</b>':'tidur')+'</p>').join('')+
+      '<p class="hint">Tekan Pakai lagi untuk melihat gambarnya.</p></details>':'';
     const lines=(h.items||[]).map(it=>(it.entries||[]).map((e,j)=>'<p class="rowout">'+esc(it.nama||'Tanpa nama')+(catName(it.kat)?' ('+esc(catName(it.kat))+')':'')+(it.entries.length>1?' · isian '+(j+1):'')+': '+(e.rol?'rol Ø'+nf.format(e.l)+' × '+nf.format(e.p):nf.format(e.p)+'×'+nf.format(e.l)+'×'+nf.format(e.t))+' cm'+(e.jb?' · '+nf0.format(e.jb)+(e.rol?' rol':' ball'):'')+(e.isi?' · isi '+nf0.format(e.isi):'')+(e.qty?' · qty '+nf0.format(e.qty)+' pcs':'')+'</p>').join('')).join('');
     return '<article class="card">'+
-      '<div style="display:flex;gap:6px;flex-wrap:wrap"><span class="badge">'+esc(String(h.kontainer||'Kustom').toUpperCase())+'</span>'+(mix?'<span class="badge">GABUNGAN</span>':'')+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap"><span class="badge">'+esc(String(h.kontainer||'Kustom').toUpperCase())+'</span>'+(mix?'<span class="badge">GABUNGAN</span>':'')+(h.susunan?'<span class="badge">SUSUNAN MANUAL</span>':'')+
         '<span class="badge '+(h.hasil==='muat'?'t-good':'t-bad')+'">'+(h.hasil==='muat'?'MUAT':'TIDAK MUAT')+'</span></div>'+
       '<h3>'+fmtTgl(h.tgl)+(h.catatan?' · '+esc(h.catatan):'')+'</h3>'+lines+
       '<div class="kv"><span class="k">Total</span><span class="v">'+nf0.format(ev.balls)+' ball · '+nf.format(ev.vol)+' m³</span></div>'+
@@ -1224,7 +1414,7 @@ function paintRiwayat(){
       '<div class="kv"><span class="k">Estimasi teori</span><span class="v">'+(ev.noFit?'Ball tidak muat':(ev.muat?'MUAT':'TIDAK MUAT')+' ('+nf1.format(ev.share*100)+'% susunan)')+'</span></div>'+
       (loadedShare(h,ev)!=null?'<div class="kv"><span class="k">Tercapai di lapangan</span><span class="v">±'+nf1.format(loadedShare(h,ev)*100)+'% susunan</span></div>':'')+
       (ev.used.length?'<p class="'+(match?'t-good':'t-warn')+'">'+(match?'Estimasi teori cocok dengan kenyataan.':'Estimasi teori berbeda dari kenyataan, riwayat ini ikut mengoreksi batas.')+'</p>':'')+
-      '<div class="c-act"><button class="lnk" data-ract="use" data-id="'+esc(h.id)+'">Pakai lagi</button><button class="lnk bad" data-ract="del" data-id="'+esc(h.id)+'">'+(H.confirmId===h.id?'Yakin hapus?':'Hapus')+'</button></div></article>';
+      sus+'<div class="c-act"><button class="lnk" data-ract="use" data-id="'+esc(h.id)+'">Pakai lagi</button><button class="lnk bad" data-ract="del" data-id="'+esc(h.id)+'">'+(H.confirmId===h.id?'Yakin hapus?':'Hapus')+'</button></div></article>';
   }).join('');
 }
 function useHistory(id){
@@ -1233,6 +1423,8 @@ function useHistory(id){
   S.P=String(h.P);S.L=String(h.L);S.T=String(h.T);
   S.box=Object.keys(BOX).find(k=>BOX[k].P===h.P&&BOX[k].L===h.L&&BOX[k].T===h.T)||'kustom';
   S.rot=!!h.rot;S.contoh=false;
+  S.manual=h.susunan&&Array.isArray(h.susunan.rows)?{on:true,rows:h.susunan.rows.map(r=>({g:r.g,o:r.o,k:r.k||'',n:r.n||''})),note:''}:{on:false,rows:[]};
+  PS.res=null;PS.sig='';
   setMode('fcl');syncBox();renderItems();window.scrollTo(0,0);
 }
 function askHDelete(id){
